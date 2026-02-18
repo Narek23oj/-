@@ -33,8 +33,6 @@ const AVATAR_PRESETS = [
   'https://api.dicebear.com/7.x/avataaars/svg?seed=Dav'
 ];
 
-const TIMI_AVATAR = 'https://api.dicebear.com/7.x/bottts/svg?seed=Timi';
-
 interface AdminDashboardProps {
     adminUsername?: string | null;
 }
@@ -52,7 +50,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
   const [studentName, setStudentName] = useState('');
   const [studentGrade, setStudentGrade] = useState('');
-  const [studentTeacher, setStudentTeacher] = useState(adminUsername || ''); 
+  const [studentTeacher, setStudentTeacher] = useState(adminUsername || ADMIN_USERNAMES[0]); 
   const [studentPassword, setStudentPassword] = useState('');
   const [studentAvatar, setStudentAvatar] = useState('');
   const [customAvatarUrl, setCustomAvatarUrl] = useState('');
@@ -314,10 +312,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
       setEditingStudentId(null);
       setStudentName(''); 
       setStudentGrade(''); 
-      setStudentTeacher(adminUsername || ''); 
+      setStudentTeacher(adminUsername || ADMIN_USERNAMES[0]); 
       setStudentPassword(''); 
       setStudentAvatar(''); 
       setCustomAvatarUrl('');
+      setStudentError(''); // Reset error
       setIsStudentModalOpen(true); stopCamera();
   };
 
@@ -325,34 +324,52 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
       setEditingStudentId(student.id);
       setStudentName(student.name); 
       setStudentGrade(student.grade); 
-      setStudentTeacher(student.teacherName || adminUsername || '');
+      setStudentTeacher(student.teacherName || adminUsername || ADMIN_USERNAMES[0]);
       setStudentPassword(student.password || '');
+      setStudentError(''); // Reset error
       if (AVATAR_PRESETS.includes(student.avatar || '')) { setStudentAvatar(student.avatar || ''); setCustomAvatarUrl(''); }
       else { setStudentAvatar(''); setCustomAvatarUrl(student.avatar || ''); }
       setIsStudentModalOpen(true); stopCamera();
   };
 
-  const handleSaveStudent = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!studentName.trim() || !studentGrade.trim()) { setStudentError('Անունը և Դասարանը պարտադիր են'); return; }
+  const closeModal = () => {
+    setIsStudentModalOpen(false);
+    stopCamera();
+  };
+
+  const handleSaveStudent = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setStudentError('');
+
+    if (!studentName.trim()) { setStudentError('Անունը պարտադիր է'); return; }
+    if (!studentGrade.trim()) { setStudentError('Դասարանը պարտադիր է'); return; }
     
     const gradeNum = parseInt(studentGrade);
-    if (gradeNum < 1 || gradeNum > 9) { setStudentError('Դասարանը պետք է լինի 1-ից 9։'); return; }
+    if (isNaN(gradeNum) || gradeNum < 1 || gradeNum > 9) { setStudentError('Դասարանը պետք է լինի 1-ից 9 (թիվ)։'); return; }
+
+    // Ensure teacher is set
+    const finalTeacher = studentTeacher.trim() || ADMIN_USERNAMES[0];
 
     const finalAvatar = customAvatarUrl.trim() || studentAvatar;
     const studentToSave: StudentProfile = {
         id: editingStudentId || generateId(),
         name: studentName.trim(),
         grade: studentGrade.trim(),
-        teacherName: studentTeacher.trim(),
+        teacherName: finalTeacher,
         password: studentPassword.trim(), 
         avatar: finalAvatar,
         joinedAt: Date.now(),
         isBlocked: false,
         score: editingStudentId ? (students.find(s=>s.id===editingStudentId)?.score) : 0
     };
-    await saveStudent(studentToSave);
-    setIsStudentModalOpen(false); stopCamera();
+    
+    try {
+        await saveStudent(studentToSave);
+        closeModal();
+    } catch (err) {
+        console.error("Failed to save student", err);
+        setStudentError("Սխալ տեղի ունեցավ պահպանելիս։");
+    }
   };
 
   return (
@@ -426,7 +443,65 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
           </div>
       )}
 
-      {/* ... Rest of existing dashboard code ... */}
+      {/* Sessions Tab */}
+      {activeTab === 'sessions' && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-[700px]">
+           {/* Session List */}
+           <div className="md:col-span-1 bg-white rounded-xl shadow border overflow-hidden flex flex-col">
+              <div className="p-4 border-b bg-gray-50">
+                  <Input placeholder="Search students..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                 {filteredSessions.length === 0 && <p className="text-gray-400 p-4 text-center">No sessions found</p>}
+                 {filteredSessions.map(session => (
+                     <div 
+                        key={session.id} 
+                        onClick={() => setSelectedSession(session)}
+                        className={`p-4 border-b cursor-pointer hover:bg-gray-50 transition ${selectedSession?.id === session.id ? 'bg-indigo-50 border-l-4 border-l-indigo-500' : ''}`}
+                     >
+                         <div className="flex justify-between items-start mb-1">
+                            <span className="font-bold text-gray-800">{session.studentName}</span>
+                            {session.isFlagged && <span className="text-[10px] bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-bold">FLAGGED</span>}
+                         </div>
+                         <div className="text-xs text-gray-500 flex justify-between">
+                            <span>{new Date(session.startTime).toLocaleString()}</span>
+                            <span>{session.messages.length} msgs</span>
+                         </div>
+                     </div>
+                 ))}
+              </div>
+           </div>
+
+           {/* Chat View */}
+           <div className="md:col-span-2 bg-white rounded-xl shadow border flex flex-col overflow-hidden">
+               {selectedSession ? (
+                   <>
+                   <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
+                       <div>
+                           <h3 className="font-bold">{selectedSession.studentName}</h3>
+                           <p className="text-xs text-gray-500">{new Date(selectedSession.startTime).toLocaleString()}</p>
+                       </div>
+                       <Button variant="danger" onClick={(e) => handleDeleteSession(selectedSession.id, e)} className="text-sm px-3 py-1">Delete Log</Button>
+                   </div>
+                   <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50/50">
+                       {selectedSession.messages.map(msg => (
+                           <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                               <div className={`max-w-[80%] p-3 rounded-lg text-sm ${msg.role === 'user' ? 'bg-indigo-100 text-indigo-900' : 'bg-white border text-gray-800'}`}>
+                                   <p className="font-bold text-xs mb-1 opacity-50">{msg.role === 'user' ? selectedSession.studentName : 'TIMI AI'}</p>
+                                   <div className="whitespace-pre-wrap"><MarkdownRenderer content={msg.text} /></div>
+                               </div>
+                           </div>
+                       ))}
+                   </div>
+                   </>
+               ) : (
+                   <div className="flex-1 flex items-center justify-center text-gray-400">Select a session to view details</div>
+               )}
+           </div>
+        </div>
+      )}
+
+      {/* Students Tab */}
       {activeTab === 'students' && (
         <div className="mb-6 space-y-4">
             <div className="flex flex-col sm:flex-row justify-between gap-4">
@@ -512,6 +587,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
         </div>
       )}
 
+      {/* Quizzes Tab */}
       {activeTab === 'quizzes' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Left Column: Forms */}
@@ -647,6 +723,88 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
                               </div>
                           </div>
                       ))}
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* Student Modal */}
+      {isStudentModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+              <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+                  <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
+                      <h3 className="font-bold text-lg">{editingStudentId ? 'Edit Student' : 'Add New Student'}</h3>
+                      <button onClick={closeModal} className="text-gray-500 hover:text-gray-800">✕</button>
+                  </div>
+                  <div className="p-6 overflow-y-auto">
+                      <form className="space-y-4">
+                          <Input label="Name" value={studentName} onChange={e => setStudentName(e.target.value)} placeholder="Full Name" />
+                          <div className="grid grid-cols-2 gap-4">
+                             <Input label="Grade" type="number" value={studentGrade} onChange={e => setStudentGrade(e.target.value)} min="1" max="9" />
+                             <div className="mb-4">
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Teacher</label>
+                                <select 
+                                    className="w-full px-3 py-2 border rounded-md"
+                                    value={studentTeacher}
+                                    onChange={e => setStudentTeacher(e.target.value)}
+                                >
+                                    {ADMIN_USERNAMES.map(u => <option key={u} value={u}>{u}</option>)}
+                                </select>
+                             </div>
+                          </div>
+                          
+                          <Input label="Password (Optional)" type="text" value={studentPassword} onChange={e => setStudentPassword(e.target.value)} placeholder="Leave empty for student setup" />
+
+                          {/* Avatar Section */}
+                          <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">Photo / Avatar</label>
+                              <div className="flex gap-4 items-start">
+                                  <div className="w-24 h-24 rounded-full bg-gray-200 overflow-hidden border-2 border-gray-300 relative">
+                                      <img 
+                                        src={customAvatarUrl || studentAvatar || `https://api.dicebear.com/7.x/initials/svg?seed=${studentName || 'New'}`} 
+                                        className="w-full h-full object-cover" 
+                                      />
+                                  </div>
+                                  <div className="flex-1 space-y-2">
+                                      {!isCameraOpen ? (
+                                          <>
+                                            <Button type="button" variant="secondary" onClick={startCamera} className="w-full text-sm">📸 Take Photo</Button>
+                                            <Button type="button" variant="ghost" onClick={() => fileInputRef.current?.click()} className="w-full text-sm border">Upload File</Button>
+                                          </>
+                                      ) : (
+                                          <div className="flex flex-col gap-2">
+                                              <div className="aspect-square bg-black rounded overflow-hidden relative">
+                                                  <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
+                                              </div>
+                                              <div className="flex gap-2">
+                                                  <Button type="button" onClick={capturePhoto} className="flex-1 text-xs">Capture</Button>
+                                                  <Button type="button" variant="danger" onClick={stopCamera} className="flex-1 text-xs">Cancel</Button>
+                                              </div>
+                                          </div>
+                                      )}
+                                      <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept="image/*" />
+                                      
+                                      <div className="flex gap-1 overflow-x-auto py-2">
+                                          {AVATAR_PRESETS.map(url => (
+                                              <img 
+                                                key={url} 
+                                                src={url} 
+                                                onClick={() => { setStudentAvatar(url); setCustomAvatarUrl(''); }}
+                                                className="w-8 h-8 rounded-full cursor-pointer border hover:border-primary"
+                                              />
+                                          ))}
+                                      </div>
+                                  </div>
+                              </div>
+                          </div>
+                          
+                          {studentError && <p className="text-red-600 text-sm font-bold bg-red-50 p-2 rounded">{studentError}</p>}
+
+                          <div className="pt-4 flex gap-3">
+                              <Button type="button" variant="ghost" onClick={closeModal} className="flex-1 border">Cancel</Button>
+                              <Button type="button" onClick={(e) => handleSaveStudent(e)} className="flex-1">Save Student</Button>
+                          </div>
+                      </form>
                   </div>
               </div>
           </div>

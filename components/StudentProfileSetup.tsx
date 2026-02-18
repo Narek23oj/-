@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react';
-import { StudentProfile } from '../types';
+import { StudentProfile, ADMIN_USERNAMES } from '../types';
 import { saveStudent } from '../services/storageService';
 import { generateAIAvatar } from '../services/geminiService';
 import Input from './Input';
@@ -24,7 +24,7 @@ const PRESET_AVATARS = [
 const StudentProfileSetup: React.FC<StudentProfileSetupProps> = ({ student, onComplete }) => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [teacherName, setTeacherName] = useState(student.teacherName || '');
+  const [teacherName, setTeacherName] = useState(student.teacherName || ADMIN_USERNAMES[0]);
   
   // Avatar State
   const [avatarMode, setAvatarMode] = useState<'PRESET' | 'UPLOAD' | 'AI'>('PRESET');
@@ -112,13 +112,19 @@ const StudentProfileSetup: React.FC<StudentProfileSetupProps> = ({ student, onCo
 
            <form onSubmit={handleSubmit} className="space-y-6">
               
-              {/* Teacher Name */}
-              <Input 
-                 label="Դասախոսի Անունը" 
-                 placeholder="Օրինակ՝ Ընկեր Վարդանյան" 
-                 value={teacherName} 
-                 onChange={e => setTeacherName(e.target.value)} 
-              />
+              {/* Teacher Selection */}
+              <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Ընտրեք Ձեր Դասախոսին</label>
+                  <select 
+                    value={teacherName} 
+                    onChange={(e) => setTeacherName(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary"
+                  >
+                      {ADMIN_USERNAMES.map(admin => (
+                          <option key={admin} value={admin}>{admin}</option>
+                      ))}
+                  </select>
+              </div>
 
               {/* Password Creation */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

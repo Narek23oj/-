@@ -14,10 +14,12 @@ import {
     subscribeToQuestions,
     saveQuestion,
     deleteQuestion,
-    setStudentScore
+    setStudentScore,
+    saveTeacherAvatar,
+    getTeacherAvatar
 } from '../services/storageService';
 import { generateQuizQuestions } from '../services/geminiService';
-import { ChatSession, StudentProfile, QuizQuestion } from '../types';
+import { ChatSession, StudentProfile, QuizQuestion, ADMIN_USERNAMES, MAIN_ADMIN } from '../types';
 import Button from './Button';
 import Input from './Input';
 import MarkdownRenderer from './MarkdownRenderer';
@@ -33,8 +35,12 @@ const AVATAR_PRESETS = [
 
 const TIMI_AVATAR = 'https://api.dicebear.com/7.x/bottts/svg?seed=Timi';
 
-export const AdminDashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'sessions' | 'students' | 'quizzes'>('sessions');
+interface AdminDashboardProps {
+    adminUsername?: string | null;
+}
+
+export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername }) => {
+  const [activeTab, setActiveTab] = useState<'sessions' | 'students' | 'quizzes' | 'profile'>('sessions');
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [students, setStudents] = useState<StudentProfile[]>([]);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
@@ -46,11 +52,15 @@ export const AdminDashboard: React.FC = () => {
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
   const [studentName, setStudentName] = useState('');
   const [studentGrade, setStudentGrade] = useState('');
-  const [studentTeacher, setStudentTeacher] = useState(''); // New State for Teacher
+  const [studentTeacher, setStudentTeacher] = useState(adminUsername || ''); 
   const [studentPassword, setStudentPassword] = useState('');
   const [studentAvatar, setStudentAvatar] = useState('');
   const [customAvatarUrl, setCustomAvatarUrl] = useState('');
   const [studentError, setStudentError] = useState('');
+
+  // Admin Profile State
+  const [adminAvatar, setAdminAvatar] = useState('');
+  const [adminAvatarPreview, setAdminAvatarPreview] = useState('');
 
   // Score Editing State
   const [editingScoreId, setEditingScoreId] = useState<string | null>(null);
@@ -74,6 +84,7 @@ export const AdminDashboard: React.FC = () => {
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const adminFileRef = useRef<HTMLInputElement>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
   const backupInputRef = useRef<HTMLInputElement>(null);
 
@@ -82,13 +93,19 @@ export const AdminDashboard: React.FC = () => {
     const unsubSessions = subscribeToSessions(setSessions);
     const unsubQuestions = subscribeToQuestions(setQuestions);
 
+    if (adminUsername) {
+        getTeacherAvatar(adminUsername).then(url => {
+            if (url) setAdminAvatar(url);
+        });
+    }
+
     return () => {
       stopCamera();
       unsubStudents();
       if(unsubSessions) unsubSessions();
       unsubQuestions();
     };
-  }, []);
+  }, [adminUsername]);
 
   // --- Filtering ---
   const filteredStudents = students.filter(s => 
@@ -99,6 +116,27 @@ export const AdminDashboard: React.FC = () => {
   const filteredSessions = sessions.filter(s => 
       s.studentName.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // --- Admin Profile Logic ---
+  const handleAdminAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+              const result = event.target?.result as string;
+              setAdminAvatarPreview(result);
+          };
+          reader.readAsDataURL(file);
+      }
+  };
+
+  const saveAdminProfile = async () => {
+      if (adminUsername && adminAvatarPreview) {
+          await saveTeacherAvatar(adminUsername, adminAvatarPreview);
+          setAdminAvatar(adminAvatarPreview);
+          alert('Profile picture updated successfully!');
+      }
+  };
 
   // --- Quiz Logic ---
   const handleAddQuestion = async () => {
@@ -169,6 +207,11 @@ export const AdminDashboard: React.FC = () => {
           await setStudentScore(studentId, score);
       }
       setEditingScoreId(null);
+  };
+
+  const viewStudentHistory = (studentName: string) => {
+      setSearchTerm(studentName);
+      setActiveTab('sessions');
   };
 
   // --- Session Flagging ---
@@ -271,7 +314,7 @@ export const AdminDashboard: React.FC = () => {
       setEditingStudentId(null);
       setStudentName(''); 
       setStudentGrade(''); 
-      setStudentTeacher(''); 
+      setStudentTeacher(adminUsername || ''); 
       setStudentPassword(''); 
       setStudentAvatar(''); 
       setCustomAvatarUrl('');
@@ -282,7 +325,7 @@ export const AdminDashboard: React.FC = () => {
       setEditingStudentId(student.id);
       setStudentName(student.name); 
       setStudentGrade(student.grade); 
-      setStudentTeacher(student.teacherName || '');
+      setStudentTeacher(student.teacherName || adminUsername || '');
       setStudentPassword(student.password || '');
       if (AVATAR_PRESETS.includes(student.avatar || '')) { setStudentAvatar(student.avatar || ''); setCustomAvatarUrl(''); }
       else { setStudentAvatar(''); setCustomAvatarUrl(student.avatar || ''); }
@@ -291,8 +334,6 @@ export const AdminDashboard: React.FC = () => {
 
   const handleSaveStudent = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Teacher name and Password is not mandatory for initial admin creation, 
-    // student can set them up on first login, but admin CAN set them.
     if (!studentName.trim() || !studentGrade.trim()) { setStudentError('Անունը և Դասարանը պարտադիր են'); return; }
     
     const gradeNum = parseInt(studentGrade);
@@ -304,7 +345,7 @@ export const AdminDashboard: React.FC = () => {
         name: studentName.trim(),
         grade: studentGrade.trim(),
         teacherName: studentTeacher.trim(),
-        password: studentPassword.trim(), // Can be empty if admin wants student to set it
+        password: studentPassword.trim(), 
         avatar: finalAvatar,
         joinedAt: Date.now(),
         isBlocked: false,
@@ -318,8 +359,8 @@ export const AdminDashboard: React.FC = () => {
     <div className="max-w-7xl mx-auto p-6 relative">
       <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Admin Panel (Teacher)</h1>
-          <p className="text-gray-500">Real-time Management</p>
+          <h1 className="text-3xl font-bold text-gray-900">Admin Panel</h1>
+          {adminUsername && <p className="text-gray-500 font-medium">Welcome, {adminUsername}</p>}
         </div>
         <div className="flex gap-2">
             <Button variant="ghost" onClick={handleExportData} className="bg-white border">Backup</Button>
@@ -330,18 +371,62 @@ export const AdminDashboard: React.FC = () => {
 
       {/* Tabs */}
       <div className="flex mb-6 bg-gray-200 p-1 rounded-lg w-fit overflow-x-auto">
-         {['sessions', 'students', 'quizzes'].map(tab => (
+         {['sessions', 'students', 'quizzes', 'profile'].map(tab => (
              <button 
                 key={tab}
                 onClick={() => setActiveTab(tab as any)}
                 className={`px-4 py-2 rounded-md text-sm font-medium capitalize whitespace-nowrap ${activeTab === tab ? 'bg-white shadow text-primary' : 'text-gray-600'}`}
              >
                  {tab === 'sessions' && flaggedSessionsCount > 0 ? `Chat Monitor (⚠️ ${flaggedSessionsCount})` : 
-                  tab === 'students' ? 'Students & Scores' : 'Subjects & Quiz'}
+                  tab === 'students' ? 'Students & Scores' : 
+                  tab === 'profile' ? 'My Profile' : 'Subjects & Quiz'}
              </button>
          ))}
       </div>
 
+      {activeTab === 'profile' && (
+          <div className="bg-white rounded-xl shadow border p-8 max-w-2xl mx-auto">
+              <h2 className="text-2xl font-bold mb-6">Teacher Profile</h2>
+              <div className="flex flex-col items-center space-y-6">
+                  <div className="relative w-32 h-32">
+                      <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-gray-100 shadow-lg bg-gray-200">
+                          <img 
+                            src={adminAvatarPreview || adminAvatar || `https://api.dicebear.com/7.x/initials/svg?seed=${adminUsername}`} 
+                            alt="Admin" 
+                            className="w-full h-full object-cover" 
+                          />
+                      </div>
+                      <button 
+                        onClick={() => adminFileRef.current?.click()}
+                        className="absolute bottom-0 right-0 bg-primary text-white p-2 rounded-full shadow hover:bg-indigo-700 transition"
+                      >
+                          ✏️
+                      </button>
+                  </div>
+                  <input type="file" ref={adminFileRef} onChange={handleAdminAvatarUpload} className="hidden" accept="image/*" />
+                  
+                  <div className="text-center">
+                      <h3 className="text-xl font-bold">{adminUsername}</h3>
+                      <p className="text-gray-500">
+                          {adminUsername === MAIN_ADMIN.username ? 'Principal / Main Administrator' : 'Teacher / Administrator'}
+                      </p>
+                      {adminUsername === MAIN_ADMIN.username && (
+                          <p className="text-xs text-indigo-600 mt-1">
+                              Email visible to all students: {MAIN_ADMIN.email}
+                          </p>
+                      )}
+                  </div>
+
+                  {adminAvatarPreview && (
+                      <Button onClick={saveAdminProfile} className="w-full max-w-xs">
+                          Save New Picture
+                      </Button>
+                  )}
+              </div>
+          </div>
+      )}
+
+      {/* ... Rest of existing dashboard code ... */}
       {activeTab === 'students' && (
         <div className="mb-6 space-y-4">
             <div className="flex flex-col sm:flex-row justify-between gap-4">
@@ -408,6 +493,13 @@ export const AdminDashboard: React.FC = () => {
                                     </span>
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                    <button 
+                                        type="button" 
+                                        onClick={() => viewStudentHistory(s.name)} 
+                                        className="text-blue-600 hover:text-blue-900 mr-4 bg-blue-50 px-2 py-1 rounded"
+                                    >
+                                        📜 History
+                                    </button>
                                     <button type="button" onClick={() => openEditModal(s)} className="text-indigo-600 hover:text-indigo-900 mr-4">Edit</button>
                                     <button type="button" onClick={() => handleToggleBlock(s.id)} className="text-orange-600 hover:text-orange-900 mr-4">{s.isBlocked ? 'Unblock' : 'Block'}</button>
                                     <button type="button" onClick={(e) => handleDeleteStudent(s.id, e)} className="text-red-600 hover:text-red-900">Delete</button>
@@ -649,36 +741,73 @@ export const AdminDashboard: React.FC = () => {
                   <form onSubmit={handleSaveStudent} className="space-y-4">
                       <Input label="Full Name" value={studentName} onChange={e => setStudentName(e.target.value)} placeholder="Name Surname" />
                       <Input label="Grade (1-9)" type="number" min="1" max="9" value={studentGrade} onChange={e => setStudentGrade(e.target.value)} />
-                      <Input label="Teacher Name" value={studentTeacher} onChange={e => setStudentTeacher(e.target.value)} placeholder="Teacher Name" />
+                      
+                      {/* Teacher Selection */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Teacher</label>
+                        <select 
+                            value={studentTeacher} 
+                            onChange={(e) => setStudentTeacher(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary"
+                        >
+                            {ADMIN_USERNAMES.map(admin => (
+                                <option key={admin} value={admin}>{admin}</option>
+                            ))}
+                        </select>
+                      </div>
+
                       <Input label="Password (Optional - Student can set it)" value={studentPassword} onChange={e => setStudentPassword(e.target.value)} />
                       
                       {/* Avatar UI */}
                       <div className="space-y-2">
                           <label className="text-sm font-medium">Profile Picture</label>
-                          <div className="flex items-center justify-center p-4 border rounded bg-gray-50">
+                          <div className="flex items-center justify-center p-4 border rounded bg-gray-50 flex-col">
                               {isCameraOpen ? (
                                   <div className="relative w-full bg-black rounded overflow-hidden">
                                       <video ref={videoRef} autoPlay playsInline className="w-full" />
-                                      <button type="button" onClick={capturePhoto} className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-white rounded-full p-2">📸</button>
+                                      <button type="button" onClick={capturePhoto} className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-white rounded-full p-2 shadow-lg z-10">📸</button>
                                   </div>
                               ) : (
-                                  <div className="text-center">
-                                      <div className="w-20 h-20 mx-auto rounded-full bg-gray-200 overflow-hidden mb-2 ring-2 ring-white shadow">
-                                          {(customAvatarUrl || studentAvatar) && <img src={customAvatarUrl || studentAvatar} className="w-full h-full object-cover" />}
+                                  <div className="text-center w-full">
+                                      <div className="w-24 h-24 mx-auto rounded-full bg-gray-200 overflow-hidden mb-3 ring-4 ring-white shadow-md relative group">
+                                          {(customAvatarUrl || studentAvatar) ? (
+                                             <img src={customAvatarUrl || studentAvatar} className="w-full h-full object-cover" />
+                                          ) : (
+                                             <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs">No Image</div>
+                                          )}
+                                          {(customAvatarUrl || studentAvatar) && (
+                                              <button 
+                                                type="button" 
+                                                onClick={() => { setCustomAvatarUrl(''); setStudentAvatar(''); }}
+                                                className="absolute inset-0 bg-black/40 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center font-bold text-xs"
+                                              >
+                                                  Remove
+                                              </button>
+                                          )}
                                       </div>
                                       <div className="flex justify-center gap-2">
-                                          <button type="button" onClick={startCamera} className="text-xs bg-blue-600 text-white px-2 py-1 rounded">Camera</button>
-                                          <button type="button" onClick={() => fileInputRef.current?.click()} className="text-xs bg-gray-600 text-white px-2 py-1 rounded">Upload</button>
+                                          <button type="button" onClick={startCamera} className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700 transition">Camera</button>
+                                          <button type="button" onClick={() => fileInputRef.current?.click()} className="text-sm bg-gray-700 text-white px-3 py-1.5 rounded hover:bg-gray-800 transition">Upload</button>
                                           <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept="image/*" />
                                       </div>
                                   </div>
                               )}
                           </div>
                           {!isCameraOpen && (
-                              <div className="flex gap-2 overflow-x-auto pb-2">
-                                  {AVATAR_PRESETS.map(url => (
-                                      <button key={url} type="button" onClick={() => {setStudentAvatar(url); setCustomAvatarUrl('')}} className="w-8 h-8 rounded-full border overflow-hidden"><img src={url} /></button>
-                                  ))}
+                              <div className="mt-2">
+                                  <p className="text-xs text-gray-500 mb-1">Or choose a preset:</p>
+                                  <div className="flex gap-2 overflow-x-auto pb-2">
+                                      {AVATAR_PRESETS.map(url => (
+                                          <button 
+                                            key={url} 
+                                            type="button" 
+                                            onClick={() => {setStudentAvatar(url); setCustomAvatarUrl('')}} 
+                                            className={`w-10 h-10 rounded-full border-2 overflow-hidden hover:scale-110 transition shrink-0 ${studentAvatar === url ? 'border-primary ring-2 ring-primary/30' : 'border-transparent'}`}
+                                          >
+                                              <img src={url} className="w-full h-full object-cover" />
+                                          </button>
+                                      ))}
+                                  </div>
                               </div>
                           )}
                       </div>

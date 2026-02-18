@@ -8,7 +8,7 @@ import { findStudentByNameAndGrade } from '../services/storageService';
 interface LoginProps {
   onLoginStudent: (student: StudentProfile) => void;
   onStudentSetupRequired: (student: StudentProfile) => void;
-  onLoginAdmin: () => void;
+  onLoginAdmin: (username: string) => void;
 }
 
 type AuthMode = 'STUDENT' | 'ADMIN';
@@ -101,8 +101,9 @@ const Login: React.FC<LoginProps> = ({ onLoginStudent, onStudentSetupRequired, o
 
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (ADMIN_USERNAMES.includes(adminUsername.trim()) && password === ADMIN_PASSWORD) {
-      onLoginAdmin();
+    const cleanUsername = adminUsername.trim();
+    if (ADMIN_USERNAMES.includes(cleanUsername) && password === ADMIN_PASSWORD) {
+      onLoginAdmin(cleanUsername);
     } else {
       setError('Սխալ մուտքանուն կամ գաղտնաբառ');
     }

@@ -36,6 +36,7 @@ export interface ChatSession {
 export interface AppState {
   currentUser: StudentProfile | null;
   isAdmin: boolean;
+  currentAdminUser?: string | null; // Track which admin is logged in
   view: 'LOGIN' | 'PROFILE_SETUP' | 'STUDENT_DASHBOARD' | 'ADMIN_DASHBOARD' | 'QUIZ';
 }
 
@@ -53,6 +54,11 @@ export const ADMIN_USERNAMES = [
   'Khachyan.S',
   'Tamamyan.G'
 ];
+
+export const MAIN_ADMIN = {
+    username: 'Yeghiazaryan.N',
+    email: 'narekexiazaryan95@gmail.com'
+};
 
 export const ADMIN_PASSWORD = 'timi.adm.edu';
 

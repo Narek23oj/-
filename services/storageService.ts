@@ -9,15 +9,18 @@ import {
   onSnapshot, 
   query, 
   orderBy,
+  where,
   deleteDoc,
   getDocs,
-  updateDoc
+  updateDoc,
+  getDoc
 } from 'firebase/firestore';
 
 const STORAGE_KEYS = {
   SESSIONS: 'timi_sessions',
   STUDENTS: 'timi_students',
-  QUESTIONS: 'timi_questions'
+  QUESTIONS: 'timi_questions',
+  TEACHERS: 'timi_teachers' // New key for teacher profiles
 };
 
 const FIREBASE_CONFIG = {
@@ -99,6 +102,43 @@ export const subscribeToSessions = (callback: (sessions: ChatSession[]) => void)
   }
 };
 
+export const subscribeToStudentSessions = (studentId: string, callback: (sessions: ChatSession[]) => void) => {
+  if (isFirebaseEnabled && db) {
+    // Note: We avoid 'orderBy' here to prevent the need for a composite index (studentId + startTime).
+    // We filter by studentId on the server, and sort by startTime on the client.
+    const q = query(
+      collection(db, STORAGE_KEYS.SESSIONS), 
+      where('studentId', '==', studentId)
+    );
+    return onSnapshot(q, (snapshot) => {
+      const sessions = snapshot.docs.map(doc => doc.data() as ChatSession);
+      // Client-side sort
+      sessions.sort((a, b) => b.startTime - a.startTime);
+      callback(sessions);
+    }, (error) => {
+        console.error("Error subscribing to student sessions (falling back to local):", error);
+        // Local fallback filtering
+        const all = getAllSessionsSync();
+        const filtered = all.filter(s => s.studentId === studentId).sort((a,b) => b.startTime - a.startTime);
+        callback(filtered);
+    });
+  } else {
+    const handler = () => { 
+        const all = getAllSessionsSync();
+        const filtered = all.filter(s => s.studentId === studentId).sort((a,b) => b.startTime - a.startTime);
+        callback(filtered);
+    };
+    window.addEventListener('storage', handler);
+    window.addEventListener(STORAGE_KEYS.SESSIONS, handler);
+    // Initial call
+    handler();
+    return () => { 
+        window.removeEventListener('storage', handler); 
+        window.removeEventListener(STORAGE_KEYS.SESSIONS, handler);
+    };
+  }
+};
+
 export const subscribeToQuestions = (callback: (questions: QuizQuestion[]) => void) => {
   if (isFirebaseEnabled && db) {
     const q = query(collection(db, STORAGE_KEYS.QUESTIONS));
@@ -125,6 +165,41 @@ export const subscribeToQuestions = (callback: (questions: QuizQuestion[]) => vo
         clearInterval(interval); 
     };
   }
+};
+
+// --- Teacher Management ---
+
+export const saveTeacherAvatar = async (username: string, avatarUrl: string): Promise<void> => {
+    // Local
+    const teachers = getTeachersSync();
+    teachers[username] = avatarUrl;
+    localStorage.setItem(STORAGE_KEYS.TEACHERS, JSON.stringify(teachers));
+    dispatchStorageEvent(STORAGE_KEYS.TEACHERS);
+
+    if (isFirebaseEnabled && db) {
+        try {
+            await setDoc(doc(db, STORAGE_KEYS.TEACHERS, username), { avatar: avatarUrl, username });
+        } catch(e) { console.warn("Firebase teacher save failed", e); }
+    }
+};
+
+export const getTeacherAvatar = async (username: string): Promise<string | null> => {
+    if (isFirebaseEnabled && db) {
+        try {
+            const docRef = doc(db, STORAGE_KEYS.TEACHERS, username);
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                return docSnap.data().avatar;
+            }
+        } catch (e) { console.warn("Firebase teacher fetch failed", e); }
+    }
+    const teachers = getTeachersSync();
+    return teachers[username] || null;
+};
+
+const getTeachersSync = (): Record<string, string> => {
+    const data = localStorage.getItem(STORAGE_KEYS.TEACHERS);
+    return data ? JSON.parse(data) : {};
 };
 
 // --- Student Management ---

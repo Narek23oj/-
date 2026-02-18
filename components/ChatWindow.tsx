@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Message, StudentProfile, ChatSession } from '../types';
 import { sendMessageToGemini } from '../services/geminiService';
-import { saveSession, generateId } from '../services/storageService';
+import { saveSession, generateId, subscribeToStudentSessions } from '../services/storageService';
 import Button from './Button';
 import MarkdownRenderer from './MarkdownRenderer';
 
@@ -18,6 +18,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ student, onSessionUpdate }) => 
   const [sessionId, setSessionId] = useState<string>(generateId());
   const [isFlagged, setIsFlagged] = useState(false);
   
+  // History State
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false); // For Mobile
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   const TIMI_AVATAR = 'https://api.dicebear.com/7.x/bottts/svg?seed=Timi';
@@ -25,33 +29,60 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ student, onSessionUpdate }) => 
   const scrollToBottom = () => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); };
   useEffect(() => { scrollToBottom(); }, [messages]);
 
+  // Load chat history for sidebar
   useEffect(() => {
-    setMessages([{
-      id: generateId(),
-      role: 'model',
-      text: `Hello ${student.name}! I am TIMI, your school assistant.
+    const unsub = subscribeToStudentSessions(student.id, (loadedSessions) => {
+        setSessions(loadedSessions);
+    });
+    return () => unsub();
+  }, [student.id]);
+
+  // Initial Welcome Message (Only if no messages loaded)
+  useEffect(() => {
+    if (messages.length === 0) {
+        setMessages([{
+            id: generateId(),
+            role: 'model',
+            text: `Hello ${student.name}! I am TIMI, your school assistant.
 We can learn Math, Armenian, English, and more!
 I can explain concepts, but I won't do your homework for you. What shall we learn today?`,
-      timestamp: Date.now()
-    }]);
+            timestamp: Date.now()
+        }]);
+    }
   }, [student.name]);
 
   const handleStartNewChat = async () => {
-    if (messages.length > 1) await saveCurrentSession();
-    setSessionId(generateId());
+    if (messages.length > 1) {
+        // Save current if it has content before resetting (progressive save already handles this, but good to ensure)
+        await saveCurrentSession(); 
+    }
+    const newId = generateId();
+    setSessionId(newId);
     setIsFlagged(false);
     setMessages([{ id: generateId(), role: 'model', text: `New topic started. How can I help?`, timestamp: Date.now() }]);
+    setIsHistoryOpen(false); // Close mobile menu
     onSessionUpdate();
   };
 
+  const loadSession = (session: ChatSession) => {
+      setSessionId(session.id);
+      setMessages(session.messages);
+      setIsFlagged(!!session.isFlagged);
+      setIsHistoryOpen(false); // Close mobile menu
+  };
+
   const saveCurrentSession = async (overrideMessages?: Message[], flaggedStatus?: boolean) => {
+    // Don't save if only 1 message (the welcome message)
+    const msgs = overrideMessages || messages;
+    if (msgs.length <= 1) return;
+
     const session: ChatSession = {
       id: sessionId,
       studentId: student.id,
       studentName: student.name,
       studentGrade: student.grade,
-      startTime: messages[0]?.timestamp || Date.now(),
-      messages: overrideMessages || messages,
+      startTime: sessions.find(s => s.id === sessionId)?.startTime || Date.now(),
+      messages: msgs,
       isFlagged: flaggedStatus !== undefined ? flaggedStatus : isFlagged
     };
     await saveSession(session);
@@ -96,64 +127,124 @@ I can explain concepts, but I won't do your homework for you. What shall we lear
   };
 
   return (
-    <div className="flex flex-col h-full bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200">
-      <div className="bg-primary px-6 py-4 flex justify-between items-center text-white">
-        <div>
-          <h2 className="text-xl font-bold">TIMI AI</h2>
-          <p className="text-sm opacity-90">Educational Assistant (Grades 1-9)</p>
-        </div>
-        <Button variant="secondary" onClick={handleStartNewChat} className="text-sm py-1 px-3">+ New Chat</Button>
+    <div className="flex h-full bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200 relative">
+      
+      {/* Mobile History Toggle Overlay */}
+      {isHistoryOpen && (
+          <div className="absolute inset-0 z-20 bg-black/50 md:hidden" onClick={() => setIsHistoryOpen(false)}></div>
+      )}
+
+      {/* History Sidebar */}
+      <div className={`absolute md:relative z-30 h-full w-64 bg-gray-50 border-r border-gray-200 flex flex-col transition-transform duration-300 ${isHistoryOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+         <div className="p-4 border-b border-gray-200 bg-white">
+             <Button variant="secondary" onClick={handleStartNewChat} className="w-full shadow-sm text-sm py-2">
+                 + New Chat
+             </Button>
+         </div>
+         <div className="flex-1 overflow-y-auto p-2 space-y-1">
+             {sessions.length === 0 && (
+                 <p className="text-center text-gray-400 text-xs mt-4">No history yet</p>
+             )}
+             {sessions.map(s => {
+                 const date = new Date(s.startTime).toLocaleDateString();
+                 const lastMsg = s.messages[s.messages.length - 1]?.text || "Empty chat";
+                 const isActive = s.id === sessionId;
+
+                 return (
+                     <button 
+                        key={s.id} 
+                        onClick={() => loadSession(s)}
+                        className={`w-full text-left p-3 rounded-lg text-sm transition-colors group ${isActive ? 'bg-primary text-white' : 'hover:bg-gray-100 text-gray-700'}`}
+                     >
+                         <div className={`text-xs font-bold mb-1 ${isActive ? 'text-indigo-200' : 'text-gray-400'}`}>{date}</div>
+                         <div className="truncate opacity-90">{lastMsg}</div>
+                     </button>
+                 )
+             })}
+         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50">
-        {messages.map((msg) => {
-          const isUser = msg.role === 'user';
-          const avatar = isUser ? (student.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${student.name}`) : TIMI_AVATAR;
-          
-          return (
-            <div key={msg.id} className={`flex items-end gap-2 mb-4 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+      {/* Main Chat Area */}
+      <div className="flex-1 flex flex-col min-w-0 h-full">
+        {/* Chat Header */}
+        <div className="bg-primary px-4 py-3 flex justify-between items-center text-white shrink-0">
+            <div className="flex items-center gap-3">
+                <button onClick={() => setIsHistoryOpen(true)} className="md:hidden text-white/80 hover:text-white">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                </button>
+                <div>
+                    <h2 className="text-lg font-bold flex items-center gap-2">
+                        TIMI AI 
+                        {isFlagged && <span className="text-[10px] bg-red-500 px-1 rounded">FLAGGED</span>}
+                    </h2>
+                    <p className="text-xs opacity-80 hidden sm:block">Educational Assistant (Grades 1-9)</p>
+                </div>
+            </div>
+            {/* Start New Chat Icon for Mobile */}
+            <button onClick={handleStartNewChat} className="md:hidden text-white/90">
+                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                 </svg>
+            </button>
+        </div>
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 bg-gray-50/50">
+            {messages.map((msg) => {
+            const isUser = msg.role === 'user';
+            const avatar = isUser ? (student.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${student.name}`) : TIMI_AVATAR;
+            
+            return (
+                <div key={msg.id} className={`flex items-end gap-2 mb-4 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+                    <div className="w-8 h-8 rounded-full bg-gray-200 overflow-hidden shrink-0 border border-gray-300 shadow-sm">
+                    <img src={avatar} alt="avatar" className="w-full h-full object-cover" />
+                    </div>
+                    <div className={`max-w-[85%] px-4 py-2.5 rounded-2xl leading-relaxed shadow-sm text-sm md:text-base ${
+                        isUser ? 'bg-primary text-white rounded-br-none' : 'bg-white text-gray-800 border border-gray-200 rounded-bl-none'
+                    }`}>
+                    <MarkdownRenderer content={msg.text} isUser={isUser} />
+                    </div>
+                </div>
+            );
+            })}
+            {isLoading && (
+            <div className="flex items-end gap-2 mb-4">
                 <div className="w-8 h-8 rounded-full bg-gray-200 overflow-hidden shrink-0 border border-gray-300 shadow-sm">
-                   <img src={avatar} alt="avatar" className="w-full h-full object-cover" />
+                    <img src={TIMI_AVATAR} alt="avatar" className="w-full h-full object-cover" />
                 </div>
-                <div className={`max-w-[85%] px-5 py-3 rounded-2xl leading-relaxed shadow-sm ${
-                    isUser ? 'bg-primary text-white rounded-br-none' : 'bg-white text-gray-800 border border-gray-200 rounded-bl-none'
-                }`}>
-                <MarkdownRenderer content={msg.text} isUser={isUser} />
+                <div className="bg-white px-5 py-3 rounded-2xl border border-gray-200 shadow-sm rounded-bl-none">
+                <div className="flex space-x-2">
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-100"></div>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-200"></div>
+                </div>
                 </div>
             </div>
-          );
-        })}
-        {isLoading && (
-          <div className="flex items-end gap-2 mb-4">
-            <div className="w-8 h-8 rounded-full bg-gray-200 overflow-hidden shrink-0 border border-gray-300 shadow-sm">
-                 <img src={TIMI_AVATAR} alt="avatar" className="w-full h-full object-cover" />
-            </div>
-            <div className="bg-white px-5 py-3 rounded-2xl border border-gray-200 shadow-sm rounded-bl-none">
-              <div className="flex space-x-2">
-                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-100"></div>
-                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-200"></div>
-              </div>
-            </div>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
-
-      <div className="p-4 bg-white border-t border-gray-200">
-        <div className="flex space-x-2">
-          <textarea
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-            placeholder="Ask a question about your homework..."
-            className="flex-1 resize-none border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary h-[50px]"
-          />
-          <Button onClick={handleSend} disabled={isLoading || !inputText.trim()}>Send</Button>
+            )}
+            <div ref={messagesEndRef} />
         </div>
-        <p className="text-xs text-gray-400 text-center mt-2">
-           Strictly for educational use. 18+ content will be reported.
-        </p>
+
+        {/* Input */}
+        <div className="p-3 md:p-4 bg-white border-t border-gray-200">
+            <div className="flex space-x-2">
+            <textarea
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                placeholder="Ask a question..."
+                className="flex-1 resize-none border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary h-[44px] text-sm md:text-base"
+            />
+            <Button onClick={handleSend} disabled={isLoading || !inputText.trim()} className="px-4">
+                <span className="hidden md:inline">Send</span>
+                <span className="md:hidden">➤</span>
+            </Button>
+            </div>
+            <p className="text-[10px] text-gray-400 text-center mt-2">
+            Strictly for educational use. 18+ content reported.
+            </p>
+        </div>
       </div>
     </div>
   );

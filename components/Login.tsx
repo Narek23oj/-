@@ -18,6 +18,7 @@ const Login: React.FC<LoginProps> = ({ onLoginStudent, onLoginAdmin }) => {
   const [name, setName] = useState('');
   const [grade, setGrade] = useState('');
   const [studentPassword, setStudentPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   
   // Admin Form State
   const [adminCode, setAdminCode] = useState('');
@@ -38,33 +39,43 @@ const Login: React.FC<LoginProps> = ({ onLoginStudent, onLoginAdmin }) => {
     resetForm();
   };
 
-  const handleStudentLogin = (e: React.FormEvent) => {
+  const handleStudentLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !grade.trim() || !studentPassword.trim()) {
       setError('Խնդրում ենք լրացնել բոլոր դաշտերը');
       return;
     }
 
-    // Check if student exists
-    const existingStudent = findStudentByNameAndGrade(name.trim(), grade.trim());
+    setIsLoading(true);
+    setError('');
 
-    if (!existingStudent) {
-        setError('Աշակերտը գտնված չէ։ Խնդրեք ուսուցչին գրանցել ձեզ համակարգում։');
-        return;
+    try {
+        // Check if student exists (async now)
+        const existingStudent = await findStudentByNameAndGrade(name.trim(), grade.trim());
+
+        if (!existingStudent) {
+            setError('Աշակերտը գտնված չէ։ Խնդրեք ուսուցչին գրանցել ձեզ համակարգում։');
+            return;
+        }
+
+        if (existingStudent.isBlocked) {
+            setError('Ձեր մուտքը համակարգ արգելափակված է ուսուցչի կողմից։');
+            return;
+        }
+
+        if (existingStudent.password !== studentPassword.trim()) {
+            setError('Սխալ գաղտնաբառ։');
+            return;
+        }
+
+        // Success
+        onLoginStudent(existingStudent);
+    } catch (err) {
+        console.error(err);
+        setError('Խնդիր առաջացավ։ Խնդրում ենք փորձել կրկին։');
+    } finally {
+        setIsLoading(false);
     }
-
-    if (existingStudent.isBlocked) {
-        setError('Ձեր մուտքը համակարգ արգելափակված է ուսուցչի կողմից։');
-        return;
-    }
-
-    if (existingStudent.password !== studentPassword.trim()) {
-        setError('Սխալ գաղտնաբառ։');
-        return;
-    }
-
-    // Success
-    onLoginStudent(existingStudent);
   };
 
   const handleAdminLogin = (e: React.FormEvent) => {
@@ -202,7 +213,7 @@ const Login: React.FC<LoginProps> = ({ onLoginStudent, onLoginAdmin }) => {
                 onChange={(e) => setStudentPassword(e.target.value)}
                 placeholder="Մուտքագրեք գաղտնաբառը"
               />
-              <Button type="submit" className="w-full py-3 text-lg shadow-lg shadow-indigo-200">
+              <Button type="submit" isLoading={isLoading} className="w-full py-3 text-lg shadow-lg shadow-indigo-200">
                 Մուտք
               </Button>
             </form>

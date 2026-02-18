@@ -6,13 +6,13 @@ export enum UserRole {
 
 export interface StudentProfile {
   id: string;
-  name: string;
-  grade: string;
-  password?: string; // Teacher generated password
-  avatar?: string; // URL to profile picture
-  joinedAt: number; // timestamp
-  isBlocked?: boolean; // New field for banning users
-  score?: number; // Gamification score
+  name: string; // Full name (First + Last)
+  grade: string; // 1-9
+  password?: string; 
+  avatar?: string; 
+  joinedAt: number; 
+  isBlocked?: boolean; 
+  score?: number; 
 }
 
 export interface Message {
@@ -29,6 +29,7 @@ export interface ChatSession {
   studentGrade: string;
   startTime: number;
   messages: Message[];
+  isFlagged?: boolean; // For 18+ content monitoring
 }
 
 export interface AppState {

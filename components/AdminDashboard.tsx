@@ -4,7 +4,6 @@ import {
     deleteSession, 
     toggleStudentBlockStatus, 
     saveStudent, 
-    findStudentByNameAndGrade, 
     generateId, 
     deleteStudent,
     bulkImportStudents,
@@ -17,6 +16,7 @@ import {
     deleteQuestion,
     setStudentScore
 } from '../services/storageService';
+import { generateQuizQuestions } from '../services/geminiService';
 import { ChatSession, StudentProfile, QuizQuestion } from '../types';
 import Button from './Button';
 import Input from './Input';
@@ -61,6 +61,11 @@ export const AdminDashboard: React.FC = () => {
   const [newPoints, setNewPoints] = useState(10);
   const [selectedFilterSubject, setSelectedFilterSubject] = useState<string>('All');
 
+  // AI Generator State
+  const [aiTopic, setAiTopic] = useState('');
+  const [aiGrade, setAiGrade] = useState('5');
+  const [isGenerating, setIsGenerating] = useState(false);
+
   // Camera & Refs
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
@@ -71,7 +76,7 @@ export const AdminDashboard: React.FC = () => {
 
   useEffect(() => {
     const unsubStudents = subscribeToStudents(setStudents);
-    const unsubSessions = setSessions && subscribeToSessions(setSessions);
+    const unsubSessions = subscribeToSessions(setSessions);
     const unsubQuestions = subscribeToQuestions(setQuestions);
 
     return () => {
@@ -112,6 +117,39 @@ export const AdminDashboard: React.FC = () => {
       setNewQuestionText('');
       setNewOptions(['', '', '', '']);
       alert("Հարցը ավելացվեց!");
+  };
+
+  const handleGenerateQuestions = async () => {
+      if (!newSubject.trim() || !aiTopic.trim()) {
+          alert("Խնդրում ենք լրացնել Առարկան և Թեման (Subject & Topic)");
+          return;
+      }
+      setIsGenerating(true);
+      try {
+          const genQuestions = await generateQuizQuestions(newSubject, aiTopic, aiGrade, 5);
+          for (const q of genQuestions) {
+              await saveQuestion(q);
+          }
+          if (genQuestions.length > 0) {
+              alert(`Հաջողությամբ գեներացվեց ${genQuestions.length} հարց:`);
+              setAiTopic('');
+          } else {
+              alert("Հարցեր չգեներացվեցին։ Փորձեք կրկին։");
+          }
+      } catch (error) {
+          console.error(error);
+          alert("Սխալ տեղի ունեցավ գեներացման ժամանակ։");
+      } finally {
+          setIsGenerating(false);
+      }
+  };
+  
+  const handleDeleteQuestion = async (id: string, e?: React.MouseEvent) => {
+      e?.preventDefault();
+      e?.stopPropagation();
+      if (window.confirm('Are you sure you want to delete this question?')) {
+          await deleteQuestion(id);
+      }
   };
 
   const uniqueSubjects = Array.from(new Set(questions.map(q => q.subject)));
@@ -170,16 +208,24 @@ export const AdminDashboard: React.FC = () => {
       e.target.value = '';
   };
 
-  const handleDeleteSession = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (confirm('Ջնջե՞լ այս սեսիան։')) {
+  const handleDeleteSession = async (id: string, e?: React.MouseEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+    if (window.confirm('Ջնջե՞լ այս սեսիան։')) {
       await deleteSession(id);
       if (selectedSession?.id === id) setSelectedSession(null);
     }
   };
 
   const handleToggleBlock = async (studentId: string) => await toggleStudentBlockStatus(studentId);
-  const handleDeleteStudent = async (studentId: string) => { if (confirm('Ջնջե՞լ աշակերտին։')) await deleteStudent(studentId); };
+  
+  const handleDeleteStudent = async (studentId: string, e?: React.MouseEvent) => { 
+      e?.preventDefault();
+      e?.stopPropagation();
+      if (window.confirm('Ջնջե՞լ աշակերտին։')) {
+          await deleteStudent(studentId);
+      }
+  };
 
   const startCamera = async () => {
     try {
@@ -268,12 +314,12 @@ export const AdminDashboard: React.FC = () => {
       </div>
 
       {/* Tabs */}
-      <div className="flex mb-6 bg-gray-200 p-1 rounded-lg w-fit">
+      <div className="flex mb-6 bg-gray-200 p-1 rounded-lg w-fit overflow-x-auto">
          {['sessions', 'students', 'quizzes'].map(tab => (
              <button 
                 key={tab}
                 onClick={() => setActiveTab(tab as any)}
-                className={`px-4 py-2 rounded-md text-sm font-medium capitalize ${activeTab === tab ? 'bg-white shadow text-primary' : 'text-gray-600'}`}
+                className={`px-4 py-2 rounded-md text-sm font-medium capitalize whitespace-nowrap ${activeTab === tab ? 'bg-white shadow text-primary' : 'text-gray-600'}`}
              >
                  {tab === 'sessions' && flaggedSessionsCount > 0 ? `Chat Monitor (⚠️ ${flaggedSessionsCount})` : 
                   tab === 'students' ? 'Students & Scores' : 'Subjects & Quiz'}
@@ -283,7 +329,7 @@ export const AdminDashboard: React.FC = () => {
 
       {activeTab === 'students' && (
         <div className="mb-6 space-y-4">
-            <div className="flex justify-between">
+            <div className="flex flex-col sm:flex-row justify-between gap-4">
                 <Input 
                     placeholder="Search students..." 
                     value={searchTerm} 
@@ -297,7 +343,7 @@ export const AdminDashboard: React.FC = () => {
                 </div>
             </div>
             
-            <div className="bg-white rounded-xl shadow border overflow-hidden">
+            <div className="bg-white rounded-xl shadow border overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                         <tr>
@@ -345,9 +391,9 @@ export const AdminDashboard: React.FC = () => {
                                     </span>
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                    <button onClick={() => openEditModal(s)} className="text-indigo-600 hover:text-indigo-900 mr-4">Edit</button>
-                                    <button onClick={() => handleToggleBlock(s.id)} className="text-orange-600 hover:text-orange-900 mr-4">{s.isBlocked ? 'Unblock' : 'Block'}</button>
-                                    <button onClick={() => handleDeleteStudent(s.id)} className="text-red-600 hover:text-red-900">Delete</button>
+                                    <button type="button" onClick={() => openEditModal(s)} className="text-indigo-600 hover:text-indigo-900 mr-4">Edit</button>
+                                    <button type="button" onClick={() => handleToggleBlock(s.id)} className="text-orange-600 hover:text-orange-900 mr-4">{s.isBlocked ? 'Unblock' : 'Block'}</button>
+                                    <button type="button" onClick={(e) => handleDeleteStudent(s.id, e)} className="text-red-600 hover:text-red-900">Delete</button>
                                 </td>
                             </tr>
                         ))}
@@ -359,86 +405,133 @@ export const AdminDashboard: React.FC = () => {
 
       {activeTab === 'quizzes' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Add Question Form */}
-              <div className="bg-white p-6 rounded-xl shadow border">
-                  <h3 className="text-lg font-bold mb-4">Add New Question</h3>
-                  <div className="space-y-4">
-                      <Input 
-                        label="Subject (e.g., Math, Science)" 
-                        value={newSubject} 
-                        onChange={(e) => setNewSubject(e.target.value)} 
-                        list="subjects-list"
-                      />
-                      <datalist id="subjects-list">
-                          {uniqueSubjects.map(s => <option key={s} value={s} />)}
-                      </datalist>
+              {/* Left Column: Forms */}
+              <div className="space-y-6">
+                  {/* AI Generator Box */}
+                  <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-6 rounded-xl shadow border border-indigo-100 relative overflow-hidden">
+                      <div className="absolute top-0 right-0 p-4 opacity-10 text-6xl">🤖</div>
+                      <h3 className="text-lg font-bold mb-4 text-indigo-900 flex items-center gap-2">
+                          <span>⚡</span> AI Question Generator
+                      </h3>
+                      <div className="space-y-4 relative z-10">
+                          <Input 
+                            label="Subject" 
+                            value={newSubject} 
+                            onChange={(e) => setNewSubject(e.target.value)} 
+                            placeholder="e.g. Mathematics"
+                            list="subjects-list"
+                          />
+                          <datalist id="subjects-list">
+                            {uniqueSubjects.map(s => <option key={s} value={s} />)}
+                          </datalist>
 
-                      <Input 
-                        label="Question Text" 
-                        value={newQuestionText} 
-                        onChange={(e) => setNewQuestionText(e.target.value)} 
-                      />
-                      
-                      <div className="space-y-2">
-                          <label className="text-sm font-medium">Options (Select the correct one)</label>
-                          {newOptions.map((opt, idx) => (
-                              <div key={idx} className="flex gap-2 items-center">
-                                  <input 
-                                    type="radio" 
-                                    name="correctOpt" 
-                                    checked={correctOption === idx} 
-                                    onChange={() => setCorrectOption(idx)}
-                                    className="h-4 w-4 text-primary"
-                                  />
-                                  <input 
-                                    className="flex-1 border rounded px-3 py-2"
-                                    placeholder={`Option ${String.fromCharCode(65 + idx)}`}
-                                    value={opt}
-                                    onChange={(e) => {
-                                        const newOpts = [...newOptions];
-                                        newOpts[idx] = e.target.value;
-                                        setNewOptions(newOpts);
-                                    }}
+                          <div className="flex gap-4">
+                              <div className="flex-1">
+                                  <Input 
+                                    label="Topic" 
+                                    value={aiTopic} 
+                                    onChange={(e) => setAiTopic(e.target.value)} 
+                                    placeholder="e.g. Fractions"
                                   />
                               </div>
-                          ))}
+                              <div className="w-24">
+                                  <Input 
+                                    label="Grade" 
+                                    type="number" 
+                                    value={aiGrade} 
+                                    onChange={(e) => setAiGrade(e.target.value)} 
+                                  />
+                              </div>
+                          </div>
+                          
+                          <Button 
+                            onClick={handleGenerateQuestions} 
+                            isLoading={isGenerating} 
+                            className="w-full bg-indigo-600 hover:bg-indigo-700"
+                          >
+                              {isGenerating ? 'Generating...' : '✨ Generate 5 Questions'}
+                          </Button>
                       </div>
+                  </div>
 
-                      <Input 
-                        label="Points" 
-                        type="number" 
-                        value={newPoints} 
-                        onChange={(e) => setNewPoints(parseInt(e.target.value))} 
-                      />
+                  {/* Manual Add Form */}
+                  <div className="bg-white p-6 rounded-xl shadow border">
+                      <h3 className="text-lg font-bold mb-4">Manual Add</h3>
+                      <div className="space-y-4">
+                          <Input 
+                            label="Subject" 
+                            value={newSubject} 
+                            onChange={(e) => setNewSubject(e.target.value)} 
+                          />
 
-                      <Button onClick={handleAddQuestion} className="w-full">Save Question</Button>
+                          <Input 
+                            label="Question Text" 
+                            value={newQuestionText} 
+                            onChange={(e) => setNewQuestionText(e.target.value)} 
+                          />
+                          
+                          <div className="space-y-2">
+                              <label className="text-sm font-medium">Options</label>
+                              {newOptions.map((opt, idx) => (
+                                  <div key={idx} className="flex gap-2 items-center">
+                                      <input 
+                                        type="radio" 
+                                        name="correctOpt" 
+                                        checked={correctOption === idx} 
+                                        onChange={() => setCorrectOption(idx)}
+                                        className="h-4 w-4 text-primary"
+                                      />
+                                      <input 
+                                        className="flex-1 border rounded px-3 py-2 text-sm"
+                                        placeholder={`Option ${String.fromCharCode(65 + idx)}`}
+                                        value={opt}
+                                        onChange={(e) => {
+                                            const newOpts = [...newOptions];
+                                            newOpts[idx] = e.target.value;
+                                            setNewOptions(newOpts);
+                                        }}
+                                      />
+                                  </div>
+                              ))}
+                          </div>
+
+                          <Input 
+                            label="Points" 
+                            type="number" 
+                            value={newPoints} 
+                            onChange={(e) => setNewPoints(parseInt(e.target.value))} 
+                          />
+
+                          <Button onClick={handleAddQuestion} className="w-full" variant="secondary">Add Manually</Button>
+                      </div>
                   </div>
               </div>
 
               {/* List Questions */}
-              <div className="bg-white p-6 rounded-xl shadow border flex flex-col h-[600px]">
+              <div className="bg-white p-6 rounded-xl shadow border flex flex-col h-[800px]">
                   <div className="flex justify-between items-center mb-4">
-                      <h3 className="text-lg font-bold">Question Bank</h3>
+                      <h3 className="text-lg font-bold">Question Bank ({questions.length})</h3>
                       <select 
                         value={selectedFilterSubject} 
                         onChange={(e) => setSelectedFilterSubject(e.target.value)}
-                        className="border rounded px-2 py-1"
+                        className="border rounded px-2 py-1 max-w-[150px]"
                       >
                           <option value="All">All Subjects</option>
                           {uniqueSubjects.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                   </div>
-                  <div className="flex-1 overflow-y-auto space-y-3">
+                  <div className="flex-1 overflow-y-auto space-y-3 pr-2">
+                      {questions.length === 0 && <p className="text-gray-400 text-center mt-10">No questions yet.</p>}
                       {questions.filter(q => selectedFilterSubject === 'All' || q.subject === selectedFilterSubject).map(q => (
                           <div key={q.id} className="p-3 border rounded hover:bg-gray-50 group">
                               <div className="flex justify-between">
                                   <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">{q.subject}</span>
-                                  <button onClick={() => deleteQuestion(q.id)} className="text-red-400 hover:text-red-600 text-sm">Delete</button>
+                                  <button type="button" onClick={(e) => handleDeleteQuestion(q.id, e)} className="text-red-400 hover:text-red-600 text-sm">Delete</button>
                               </div>
-                              <p className="font-medium mt-1">{q.question}</p>
-                              <div className="text-xs text-gray-500 mt-2 grid grid-cols-2 gap-1">
+                              <p className="font-medium mt-1 text-sm">{q.question}</p>
+                              <div className="text-xs text-gray-500 mt-2 grid grid-cols-1 sm:grid-cols-2 gap-1">
                                   {q.options.map((o, i) => (
-                                      <span key={i} className={i === q.correctAnswer ? "text-green-600 font-bold" : ""}>
+                                      <span key={i} className={`truncate ${i === q.correctAnswer ? "text-green-600 font-bold" : ""}`}>
                                           {String.fromCharCode(65+i)}. {o}
                                       </span>
                                   ))}
@@ -515,7 +608,7 @@ export const AdminDashboard: React.FC = () => {
       {/* Add Student Modal */}
       {isStudentModalOpen && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-              <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+              <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
                   <h2 className="text-2xl font-bold mb-4">{editingStudentId ? 'Edit Student' : 'Register New Student'}</h2>
                   {studentError && <div className="bg-red-50 text-red-600 p-2 rounded mb-4 text-sm">{studentError}</div>}
                   <form onSubmit={handleSaveStudent} className="space-y-4">

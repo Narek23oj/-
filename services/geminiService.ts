@@ -1,6 +1,6 @@
 
-import { GoogleGenAI } from "@google/genai";
-import { Message } from "../types";
+import { GoogleGenAI, Type } from "@google/genai";
+import { Message, QuizQuestion } from "../types";
 
 // Educational System Instruction
 const SYSTEM_INSTRUCTION = `
@@ -66,4 +66,64 @@ export const sendMessageToGemini = async (
     console.error("Gemini API Error:", error);
     return { text: "Կապի խափանում։", isSafetyViolation: false };
   }
+};
+
+export const generateQuizQuestions = async (
+  subject: string,
+  topic: string,
+  grade: string,
+  count: number = 5
+): Promise<QuizQuestion[]> => {
+    const client = getAIClient();
+    
+    // Explicitly ask for Armenian
+    const prompt = `Generate ${count} multiple choice questions (A, B, C, D) for ${grade} grade students.
+    Subject: "${subject}"
+    Topic: "${topic}"
+    Language: Armenian (Հայերեն)
+    
+    Ensure the questions are educational, clear, and appropriate for the grade level.
+    `;
+
+    try {
+        const response = await client.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: prompt,
+            config: {
+                responseMimeType: 'application/json',
+                responseSchema: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            question: { type: Type.STRING },
+                            options: { type: Type.ARRAY, items: { type: Type.STRING } },
+                            correctAnswer: { type: Type.INTEGER, description: "Index 0-3" },
+                            points: { type: Type.INTEGER },
+                            subject: { type: Type.STRING }
+                        }
+                    }
+                }
+            }
+        });
+
+        const text = response.text;
+        if (!text) return [];
+        
+        const questions = JSON.parse(text) as any[];
+        
+        // Post-process to ensure IDs and correct structure
+        return questions.map(q => ({
+            id: Math.random().toString(36).substring(2, 15),
+            subject: subject, // Ensure subject matches requested
+            question: q.question,
+            options: q.options,
+            correctAnswer: q.correctAnswer,
+            points: q.points || 10
+        }));
+
+    } catch (e) {
+        console.error("AI Generation Error", e);
+        return [];
+    }
 };

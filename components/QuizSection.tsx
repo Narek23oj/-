@@ -129,7 +129,7 @@ const QuizSection: React.FC<QuizSectionProps> = ({ student, onScoreUpdate, onBac
         <button onClick={() => setSelectedSubject(null)} className="text-white/80 hover:text-white text-sm bg-white/10 px-3 py-1 rounded">Exit Quiz</button>
       </div>
 
-      <div className="flex-1 p-6 md:p-10 flex flex-col justify-center max-w-3xl mx-auto w-full">
+      <div className="flex-1 p-6 md:p-10 flex flex-col justify-center max-w-3xl mx-auto w-full overflow-y-auto">
          <div className="mb-8">
             <h3 className="text-2xl md:text-3xl font-bold text-gray-800 leading-tight">{currentQuestion.question}</h3>
             <span className="inline-block mt-3 px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-bold">{currentQuestion.points} Points</span>
@@ -137,24 +137,25 @@ const QuizSection: React.FC<QuizSectionProps> = ({ student, onScoreUpdate, onBac
 
          <div className="space-y-3">
             {currentQuestion.options.map((option, idx) => {
-                let btnClass = "w-full p-4 rounded-xl border-2 text-left transition-all font-medium ";
+                let btnClass = "w-full p-4 rounded-xl border-2 text-left transition-all font-medium flex items-center min-h-[64px] ";
                 if (isAnswered) {
                     if (idx === currentQuestion.correctAnswer) btnClass += "bg-green-100 border-green-500 text-green-800";
                     else if (selectedAnswer === idx) btnClass += "bg-red-50 border-red-500 text-red-800";
                     else btnClass += "border-gray-100 text-gray-400 opacity-50";
                 } else {
-                    btnClass += "bg-white border-gray-200 hover:border-primary hover:bg-indigo-50 text-gray-700";
+                    btnClass += "bg-white border-gray-200 hover:border-primary hover:bg-indigo-50 text-gray-700 hover:shadow-md";
                 }
                 return (
                     <button key={idx} onClick={() => handleAnswerSelect(idx)} disabled={isAnswered} className={btnClass}>
-                        <span className="mr-2 opacity-50">{String.fromCharCode(65 + idx)}.</span> {option}
+                        <span className="mr-3 font-bold opacity-50 shrink-0 text-lg w-6">{String.fromCharCode(65 + idx)}.</span> 
+                        <span className="whitespace-normal leading-tight">{option}</span>
                     </button>
                 );
             })}
          </div>
 
          {isAnswered && (
-             <div className={`mt-8 p-4 rounded-lg flex justify-between items-center animate-fade-in ${feedback === 'correct' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
+             <div className={`mt-8 p-4 rounded-lg flex flex-col sm:flex-row justify-between items-center animate-fade-in gap-4 ${feedback === 'correct' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
                  <div className="flex items-center">
                      <span className="text-2xl mr-3">{feedback === 'correct' ? '🎉' : '❌'}</span>
                      <div>
@@ -162,8 +163,8 @@ const QuizSection: React.FC<QuizSectionProps> = ({ student, onScoreUpdate, onBac
                          {feedback === 'correct' && <p className="text-sm">+ {scoreEarned} points</p>}
                      </div>
                  </div>
-                 <Button onClick={handleNextQuestion} disabled={isUpdatingScore}>
-                     {currentQuestionIndex < filteredQuestions.length - 1 ? 'Next →' : 'Finish'}
+                 <Button onClick={handleNextQuestion} disabled={isUpdatingScore} className="w-full sm:w-auto">
+                     {currentQuestionIndex < filteredQuestions.length - 1 ? 'Next Question →' : 'Finish Quiz'}
                  </Button>
              </div>
          )}

@@ -1,27 +1,31 @@
+
 import React, { useState } from 'react';
 import Input from './Input';
 import Button from './Button';
-import { ADMIN_CREDENTIALS, StudentProfile } from '../types';
+import { ADMIN_USERNAMES, ADMIN_PASSWORD, StudentProfile } from '../types';
 import { findStudentByNameAndGrade } from '../services/storageService';
 
 interface LoginProps {
   onLoginStudent: (student: StudentProfile) => void;
+  onStudentSetupRequired: (student: StudentProfile) => void;
   onLoginAdmin: () => void;
 }
 
 type AuthMode = 'STUDENT' | 'ADMIN';
 
-const Login: React.FC<LoginProps> = ({ onLoginStudent, onLoginAdmin }) => {
+const Login: React.FC<LoginProps> = ({ onLoginStudent, onStudentSetupRequired, onLoginAdmin }) => {
   const [authMode, setAuthMode] = useState<AuthMode>('STUDENT');
   
   // Student Form State
   const [name, setName] = useState('');
   const [grade, setGrade] = useState('');
   const [studentPassword, setStudentPassword] = useState('');
+  const [showPasswordInput, setShowPasswordInput] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [foundStudent, setFoundStudent] = useState<StudentProfile | null>(null);
   
   // Admin Form State
-  const [adminCode, setAdminCode] = useState('');
+  const [adminUsername, setAdminUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
@@ -29,9 +33,11 @@ const Login: React.FC<LoginProps> = ({ onLoginStudent, onLoginAdmin }) => {
     setName('');
     setGrade('');
     setStudentPassword('');
-    setAdminCode('');
+    setAdminUsername('');
     setPassword('');
     setError('');
+    setShowPasswordInput(false);
+    setFoundStudent(null);
   };
 
   const handleModeChange = (mode: AuthMode) => {
@@ -39,10 +45,10 @@ const Login: React.FC<LoginProps> = ({ onLoginStudent, onLoginAdmin }) => {
     resetForm();
   };
 
-  const handleStudentLogin = async (e: React.FormEvent) => {
+  const handleStudentCheck = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !grade.trim() || !studentPassword.trim()) {
-      setError('Խնդրում ենք լրացնել բոլոր դաշտերը');
+    if (!name.trim() || !grade.trim()) {
+      setError('Խնդրում ենք լրացնել Անուն և Դասարան դաշտերը');
       return;
     }
 
@@ -50,37 +56,52 @@ const Login: React.FC<LoginProps> = ({ onLoginStudent, onLoginAdmin }) => {
     setError('');
 
     try {
-        // Check if student exists (async now)
-        const existingStudent = await findStudentByNameAndGrade(name.trim(), grade.trim());
+        const student = await findStudentByNameAndGrade(name.trim(), grade.trim());
 
-        if (!existingStudent) {
+        if (!student) {
             setError('Աշակերտը գտնված չէ։ Խնդրեք ուսուցչին գրանցել ձեզ համակարգում։');
+            setIsLoading(false);
             return;
         }
 
-        if (existingStudent.isBlocked) {
+        if (student.isBlocked) {
             setError('Ձեր մուտքը համակարգ արգելափակված է ուսուցչի կողմից։');
+            setIsLoading(false);
             return;
         }
 
-        if (existingStudent.password !== studentPassword.trim()) {
-            setError('Սխալ գաղտնաբառ։');
+        // SCENARIO: Student found, NO password set -> Go to Setup
+        if (!student.password) {
+            onStudentSetupRequired(student);
             return;
         }
 
-        // Success
-        onLoginStudent(existingStudent);
+        // SCENARIO: Student found, password exists -> Show Password Input
+        setFoundStudent(student);
+        setShowPasswordInput(true);
+        setIsLoading(false);
+
     } catch (err) {
         console.error(err);
         setError('Խնդիր առաջացավ։ Խնդրում ենք փորձել կրկին։');
-    } finally {
         setIsLoading(false);
     }
   };
 
+  const handleStudentFinalLogin = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!foundStudent) return;
+      
+      if (foundStudent.password !== studentPassword.trim()) {
+          setError('Սխալ գաղտնաբառ։');
+          return;
+      }
+      onLoginStudent(foundStudent);
+  };
+
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (adminCode === ADMIN_CREDENTIALS.code && password === ADMIN_CREDENTIALS.password) {
+    if (ADMIN_USERNAMES.includes(adminUsername.trim()) && password === ADMIN_PASSWORD) {
       onLoginAdmin();
     } else {
       setError('Սխալ մուտքանուն կամ գաղտնաբառ');
@@ -158,7 +179,9 @@ const Login: React.FC<LoginProps> = ({ onLoginStudent, onLoginAdmin }) => {
                 </>
             )}
             {authMode === 'STUDENT' && (
-                <p className="text-gray-500">Մուտքագրեք ձեր տվյալները սկսելու համար</p>
+                <p className="text-gray-500">
+                    {showPasswordInput ? `Բարև, ${foundStudent?.name}` : 'Մուտքագրեք ձեր տվյալները սկսելու համար'}
+                </p>
             )}
           </div>
 
@@ -171,11 +194,15 @@ const Login: React.FC<LoginProps> = ({ onLoginStudent, onLoginAdmin }) => {
           {authMode === 'ADMIN' && (
             <form onSubmit={handleAdminLogin} className="space-y-6">
               <Input
-                label="Admin Code"
-                value={adminCode}
-                onChange={(e) => setAdminCode(e.target.value)}
-                placeholder="Մուտքագրեք կոդը"
+                label="Admin Username"
+                value={adminUsername}
+                onChange={(e) => setAdminUsername(e.target.value)}
+                placeholder="Օր.՝ Yeghiazaryan.N"
+                list="admin-list"
               />
+              <datalist id="admin-list">
+                  {ADMIN_USERNAMES.map(u => <option key={u} value={u} />)}
+              </datalist>
               <Input
                 label="Password"
                 type="password"
@@ -189,8 +216,8 @@ const Login: React.FC<LoginProps> = ({ onLoginStudent, onLoginAdmin }) => {
             </form>
           )}
 
-          {authMode === 'STUDENT' && (
-            <form onSubmit={handleStudentLogin} className="space-y-6">
+          {authMode === 'STUDENT' && !showPasswordInput && (
+            <form onSubmit={handleStudentCheck} className="space-y-6">
               <Input
                 label="Անուն Ազգանուն"
                 value={name}
@@ -206,17 +233,26 @@ const Login: React.FC<LoginProps> = ({ onLoginStudent, onLoginAdmin }) => {
                 min="1"
                 max="12"
               />
-              <Input
-                label="Գաղտնաբառ"
-                type="password"
-                value={studentPassword}
-                onChange={(e) => setStudentPassword(e.target.value)}
-                placeholder="Մուտքագրեք գաղտնաբառը"
-              />
               <Button type="submit" isLoading={isLoading} className="w-full py-3 text-lg shadow-lg shadow-indigo-200">
-                Մուտք
+                Շարունակել
               </Button>
             </form>
+          )}
+
+          {authMode === 'STUDENT' && showPasswordInput && (
+              <form onSubmit={handleStudentFinalLogin} className="space-y-6">
+                  <Input
+                    label="Գաղտնաբառ"
+                    type="password"
+                    value={studentPassword}
+                    onChange={(e) => setStudentPassword(e.target.value)}
+                    placeholder="Մուտքագրեք գաղտնաբառը"
+                  />
+                  <div className="flex gap-2">
+                      <Button variant="ghost" onClick={resetForm} className="flex-1">Ետ</Button>
+                      <Button type="submit" className="flex-1 shadow-lg shadow-indigo-200">Մուտք</Button>
+                  </div>
+              </form>
           )}
         </div>
       </div>

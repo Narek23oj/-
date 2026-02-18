@@ -127,3 +127,32 @@ export const generateQuizQuestions = async (
         return [];
     }
 };
+
+export const generateAIAvatar = async (description: string, style: string): Promise<string | null> => {
+  const client = getAIClient();
+  
+  const prompt = `A cool, friendly ${style} avatar for a school student profile picture. 
+  Description: ${description}. 
+  Ensure it is safe, appropriate for school, colorful, white or simple background, centered face.`;
+
+  try {
+    const response = await client.models.generateImages({
+      model: 'imagen-3.0-generate-001',
+      prompt: prompt,
+      config: {
+        numberOfImages: 1,
+        aspectRatio: '1:1',
+        outputMimeType: 'image/jpeg'
+      },
+    });
+
+    if (response.generatedImages && response.generatedImages.length > 0) {
+      const base64String = response.generatedImages[0].image.imageBytes;
+      return `data:image/jpeg;base64,${base64String}`;
+    }
+    return null;
+  } catch (error) {
+    console.error("Avatar Generation Error:", error);
+    return null;
+  }
+};

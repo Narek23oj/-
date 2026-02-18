@@ -31,6 +31,8 @@ const AVATAR_PRESETS = [
   'https://api.dicebear.com/7.x/avataaars/svg?seed=Dav'
 ];
 
+const TIMI_AVATAR = 'https://api.dicebear.com/7.x/bottts/svg?seed=Timi';
+
 export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'sessions' | 'students' | 'quizzes'>('sessions');
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -44,6 +46,7 @@ export const AdminDashboard: React.FC = () => {
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
   const [studentName, setStudentName] = useState('');
   const [studentGrade, setStudentGrade] = useState('');
+  const [studentTeacher, setStudentTeacher] = useState(''); // New State for Teacher
   const [studentPassword, setStudentPassword] = useState('');
   const [studentAvatar, setStudentAvatar] = useState('');
   const [customAvatarUrl, setCustomAvatarUrl] = useState('');
@@ -266,13 +269,21 @@ export const AdminDashboard: React.FC = () => {
 
   const openAddModal = () => {
       setEditingStudentId(null);
-      setStudentName(''); setStudentGrade(''); setStudentPassword(''); setStudentAvatar(''); setCustomAvatarUrl('');
+      setStudentName(''); 
+      setStudentGrade(''); 
+      setStudentTeacher(''); 
+      setStudentPassword(''); 
+      setStudentAvatar(''); 
+      setCustomAvatarUrl('');
       setIsStudentModalOpen(true); stopCamera();
   };
 
   const openEditModal = (student: StudentProfile) => {
       setEditingStudentId(student.id);
-      setStudentName(student.name); setStudentGrade(student.grade); setStudentPassword(student.password || '');
+      setStudentName(student.name); 
+      setStudentGrade(student.grade); 
+      setStudentTeacher(student.teacherName || '');
+      setStudentPassword(student.password || '');
       if (AVATAR_PRESETS.includes(student.avatar || '')) { setStudentAvatar(student.avatar || ''); setCustomAvatarUrl(''); }
       else { setStudentAvatar(''); setCustomAvatarUrl(student.avatar || ''); }
       setIsStudentModalOpen(true); stopCamera();
@@ -280,7 +291,10 @@ export const AdminDashboard: React.FC = () => {
 
   const handleSaveStudent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!studentName.trim() || !studentGrade.trim() || !studentPassword.trim()) { setStudentError('Լրացրեք բոլոր դաշտերը'); return; }
+    // Teacher name and Password is not mandatory for initial admin creation, 
+    // student can set them up on first login, but admin CAN set them.
+    if (!studentName.trim() || !studentGrade.trim()) { setStudentError('Անունը և Դասարանը պարտադիր են'); return; }
+    
     const gradeNum = parseInt(studentGrade);
     if (gradeNum < 1 || gradeNum > 9) { setStudentError('Դասարանը պետք է լինի 1-ից 9։'); return; }
 
@@ -289,7 +303,8 @@ export const AdminDashboard: React.FC = () => {
         id: editingStudentId || generateId(),
         name: studentName.trim(),
         grade: studentGrade.trim(),
-        password: studentPassword.trim(),
+        teacherName: studentTeacher.trim(),
+        password: studentPassword.trim(), // Can be empty if admin wants student to set it
         avatar: finalAvatar,
         joinedAt: Date.now(),
         isBlocked: false,
@@ -349,6 +364,7 @@ export const AdminDashboard: React.FC = () => {
                         <tr>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Student</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Grade</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Teacher</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Password</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Score</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
@@ -360,12 +376,13 @@ export const AdminDashboard: React.FC = () => {
                             <tr key={s.id} className={s.isBlocked ? 'bg-red-50' : ''}>
                                 <td className="px-6 py-4 whitespace-nowrap flex items-center">
                                     <div className="h-8 w-8 rounded-full bg-gray-200 overflow-hidden mr-3">
-                                        <img src={s.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${s.name}`} alt="" className="h-full w-full" />
+                                        <img src={s.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${s.name}`} alt="" className="h-full w-full object-cover" />
                                     </div>
                                     <span className="font-medium text-gray-900">{s.name}</span>
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{s.grade}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-600">{s.password}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{s.teacherName || '-'}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-600">{s.password || '<Not Set>'}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                     {editingScoreId === s.id ? (
                                         <div className="flex items-center gap-1">
@@ -557,22 +574,31 @@ export const AdminDashboard: React.FC = () => {
                     />
                 </div>
                 <div className="flex-1 overflow-y-auto p-2 space-y-2">
-                    {filteredSessions.map(session => (
+                    {filteredSessions.map(session => {
+                        const sProfile = students.find(st => st.id === session.studentId);
+                        const avatar = sProfile?.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${session.studentName}`;
+                        
+                        return (
                         <div 
                             key={session.id}
                             onClick={() => setSelectedSession(session)}
-                            className={`p-3 rounded-lg cursor-pointer border transition-colors relative ${
+                            className={`p-3 rounded-lg cursor-pointer border transition-colors relative flex gap-3 items-start ${
                                 selectedSession?.id === session.id 
                                 ? 'bg-primary/10 border-primary' 
                                 : session.isFlagged ? 'bg-red-50 border-red-300' : 'bg-white hover:bg-gray-50'
                             }`}
                         >
-                            {session.isFlagged && <span className="absolute top-2 right-2 text-xs bg-red-600 text-white px-1.5 rounded">18+ ALERT</span>}
-                            <div className="font-medium">{session.studentName}</div>
-                            <div className="text-xs text-gray-500">{new Date(session.startTime).toLocaleDateString()}</div>
-                            <div className="text-xs text-gray-400 mt-1 line-clamp-1">{session.messages[session.messages.length-1]?.text}</div>
+                            <div className="w-10 h-10 rounded-full bg-gray-200 overflow-hidden shrink-0 border border-gray-300">
+                                <img src={avatar} alt="" className="w-full h-full object-cover" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                {session.isFlagged && <span className="absolute top-2 right-2 text-xs bg-red-600 text-white px-1.5 rounded">18+ ALERT</span>}
+                                <div className="font-medium truncate">{session.studentName}</div>
+                                <div className="text-xs text-gray-500">{new Date(session.startTime).toLocaleDateString()}</div>
+                                <div className="text-xs text-gray-400 mt-1 line-clamp-1">{session.messages[session.messages.length-1]?.text}</div>
+                            </div>
                         </div>
-                    ))}
+                    )})}
                 </div>
             </div>
 
@@ -588,14 +614,23 @@ export const AdminDashboard: React.FC = () => {
                             <Button variant="danger" onClick={(e) => handleDeleteSession(selectedSession.id, e)} className="text-xs py-1">Delete Chat</Button>
                         </div>
                         <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                            {selectedSession.messages.map(msg => (
-                                <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                    <div className={`max-w-[85%] px-4 py-2 rounded-lg text-sm ${msg.role === 'user' ? 'bg-blue-100 text-blue-900' : 'bg-gray-100 text-gray-900'}`}>
-                                        <span className="text-xs font-bold block mb-1 opacity-50">{msg.role === 'user' ? 'Student' : 'TIMI AI'}</span>
+                            {selectedSession.messages.map(msg => {
+                                const isUser = msg.role === 'user';
+                                const avatar = isUser 
+                                    ? (students.find(s => s.id === selectedSession.studentId)?.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${selectedSession.studentName}`)
+                                    : TIMI_AVATAR;
+
+                                return (
+                                <div key={msg.id} className={`flex items-end gap-2 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+                                    <div className="w-8 h-8 rounded-full bg-gray-200 overflow-hidden shrink-0 border border-gray-300">
+                                        <img src={avatar} className="w-full h-full object-cover" />
+                                    </div>
+                                    <div className={`max-w-[85%] px-4 py-2 rounded-2xl text-sm ${isUser ? 'bg-blue-100 text-blue-900 rounded-br-none' : 'bg-gray-100 text-gray-900 rounded-bl-none'}`}>
+                                        <span className="text-xs font-bold block mb-1 opacity-50">{isUser ? 'Student' : 'TIMI AI'}</span>
                                         <MarkdownRenderer content={msg.text} />
                                     </div>
                                 </div>
-                            ))}
+                            )})}
                         </div>
                     </>
                 ) : (
@@ -614,7 +649,8 @@ export const AdminDashboard: React.FC = () => {
                   <form onSubmit={handleSaveStudent} className="space-y-4">
                       <Input label="Full Name" value={studentName} onChange={e => setStudentName(e.target.value)} placeholder="Name Surname" />
                       <Input label="Grade (1-9)" type="number" min="1" max="9" value={studentGrade} onChange={e => setStudentGrade(e.target.value)} />
-                      <Input label="Password" value={studentPassword} onChange={e => setStudentPassword(e.target.value)} />
+                      <Input label="Teacher Name" value={studentTeacher} onChange={e => setStudentTeacher(e.target.value)} placeholder="Teacher Name" />
+                      <Input label="Password (Optional - Student can set it)" value={studentPassword} onChange={e => setStudentPassword(e.target.value)} />
                       
                       {/* Avatar UI */}
                       <div className="space-y-2">

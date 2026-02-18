@@ -13,6 +13,7 @@ export interface StudentProfile {
   joinedAt: number; 
   isBlocked?: boolean; 
   score?: number; 
+  teacherName?: string; // Added teacher name
 }
 
 export interface Message {
@@ -35,13 +36,25 @@ export interface ChatSession {
 export interface AppState {
   currentUser: StudentProfile | null;
   isAdmin: boolean;
-  view: 'LOGIN' | 'STUDENT_DASHBOARD' | 'ADMIN_DASHBOARD' | 'QUIZ';
+  view: 'LOGIN' | 'PROFILE_SETUP' | 'STUDENT_DASHBOARD' | 'ADMIN_DASHBOARD' | 'QUIZ';
 }
 
-export const ADMIN_CREDENTIALS = {
-  code: 'timi1',
-  password: 'TiMi1'
-};
+export const ADMIN_USERNAMES = [
+  'Yeghiazaryan.N',
+  'Margaryan.G',
+  'Matevosyan.H',
+  'Harutyunyan.H',
+  'Taschyan.D',
+  'Davtyan.R',
+  'Tamrazyan.C',
+  'Gasparyan.O',
+  'Nersisyan.L',
+  'Sayadyan.A',
+  'Khachyan.S',
+  'Tamamyan.G'
+];
+
+export const ADMIN_PASSWORD = 'timi.adm.edu';
 
 export interface QuizQuestion {
   id: string;

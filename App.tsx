@@ -1,9 +1,11 @@
+
 import React, { useState } from 'react';
 import { AppState, StudentProfile } from './types';
 import Login from './components/Login';
 import ChatWindow from './components/ChatWindow';
 import { AdminDashboard } from './components/AdminDashboard';
 import QuizSection from './components/QuizSection';
+import StudentProfileSetup from './components/StudentProfileSetup';
 import Button from './components/Button';
 
 const App: React.FC = () => {
@@ -21,6 +23,18 @@ const App: React.FC = () => {
       isAdmin: false,
       view: 'STUDENT_DASHBOARD'
     });
+  };
+
+  const handleStudentSetupRequired = (student: StudentProfile) => {
+      setState({
+          currentUser: student,
+          isAdmin: false,
+          view: 'PROFILE_SETUP'
+      });
+  };
+
+  const handleProfileSetupComplete = (updatedStudent: StudentProfile) => {
+      handleLoginStudent(updatedStudent);
   };
 
   const handleLoginAdmin = () => {
@@ -55,9 +69,19 @@ const App: React.FC = () => {
     return (
       <Login 
         onLoginStudent={handleLoginStudent} 
+        onStudentSetupRequired={handleStudentSetupRequired}
         onLoginAdmin={handleLoginAdmin} 
       />
     );
+  }
+
+  if (state.view === 'PROFILE_SETUP' && state.currentUser) {
+      return (
+          <StudentProfileSetup 
+            student={state.currentUser} 
+            onComplete={handleProfileSetupComplete} 
+          />
+      );
   }
 
   if (state.view === 'ADMIN_DASHBOARD') {
@@ -104,7 +128,10 @@ const App: React.FC = () => {
              </div>
              <div>
                <h3 className="font-bold text-gray-800 leading-tight">{state.currentUser?.name}</h3>
-               <p className="text-xs text-gray-500">Դասարան {state.currentUser?.grade}</p>
+               <p className="text-xs text-gray-500">
+                   {state.currentUser?.grade}-րդ դասարան 
+                   {state.currentUser?.teacherName && <span className="text-indigo-600"> • {state.currentUser.teacherName}</span>}
+               </p>
              </div>
           </div>
 

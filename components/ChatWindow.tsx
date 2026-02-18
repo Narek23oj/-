@@ -19,6 +19,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ student, onSessionUpdate }) => 
   const [isFlagged, setIsFlagged] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  const TIMI_AVATAR = 'https://api.dicebear.com/7.x/bottts/svg?seed=Timi';
 
   const scrollToBottom = () => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); };
   useEffect(() => { scrollToBottom(); }, [messages]);
@@ -104,18 +106,29 @@ I can explain concepts, but I won't do your homework for you. What shall we lear
       </div>
 
       <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50">
-        {messages.map((msg) => (
-          <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[85%] px-5 py-3 rounded-2xl leading-relaxed shadow-sm ${
-                msg.role === 'user' ? 'bg-primary text-white rounded-br-none' : 'bg-white text-gray-800 border border-gray-200 rounded-bl-none'
-              }`}>
-              <MarkdownRenderer content={msg.text} isUser={msg.role === 'user'} />
+        {messages.map((msg) => {
+          const isUser = msg.role === 'user';
+          const avatar = isUser ? (student.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${student.name}`) : TIMI_AVATAR;
+          
+          return (
+            <div key={msg.id} className={`flex items-end gap-2 mb-4 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+                <div className="w-8 h-8 rounded-full bg-gray-200 overflow-hidden shrink-0 border border-gray-300 shadow-sm">
+                   <img src={avatar} alt="avatar" className="w-full h-full object-cover" />
+                </div>
+                <div className={`max-w-[85%] px-5 py-3 rounded-2xl leading-relaxed shadow-sm ${
+                    isUser ? 'bg-primary text-white rounded-br-none' : 'bg-white text-gray-800 border border-gray-200 rounded-bl-none'
+                }`}>
+                <MarkdownRenderer content={msg.text} isUser={isUser} />
+                </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         {isLoading && (
-          <div className="flex justify-start">
-            <div className="bg-white px-5 py-3 rounded-2xl border border-gray-200 shadow-sm">
+          <div className="flex items-end gap-2 mb-4">
+            <div className="w-8 h-8 rounded-full bg-gray-200 overflow-hidden shrink-0 border border-gray-300 shadow-sm">
+                 <img src={TIMI_AVATAR} alt="avatar" className="w-full h-full object-cover" />
+            </div>
+            <div className="bg-white px-5 py-3 rounded-2xl border border-gray-200 shadow-sm rounded-bl-none">
               <div className="flex space-x-2">
                 <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
                 <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-100"></div>

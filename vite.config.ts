@@ -1,17 +1,14 @@
 
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
-  // Load env file based on `mode` in the current working directory.
-  const env = loadEnv(mode, process.cwd(), '');
-
   return {
     plugins: [react()],
     define: {
-      // API Keys for Client Side (Hardcoded based on user request)
-      'process.env.API_KEY': JSON.stringify("AIzaSyAQS-IHQk4kRXTT4VPSBN1ylKGfnxxSB7o"),
+      // API Keys for Client Side
+      'process.env.API_KEY': JSON.stringify("AIzaSyBH033mEB1Fe25TFahiLjRxpQtN_e2Oq9A"),
       
       // Firebase Configuration
       'process.env.FIREBASE_API_KEY': JSON.stringify("AIzaSyBkLx7A2QGeQFfklSFyYg7PPDLTCbAMhzw"),

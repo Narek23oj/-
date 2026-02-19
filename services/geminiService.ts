@@ -24,6 +24,7 @@ let ai: GoogleGenAI | null = null;
 
 const getAIClient = () => {
   if (!ai) {
+    // Uses the API key from vite.config.ts (process.env.API_KEY)
     ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   }
   return ai;
@@ -31,10 +32,44 @@ const getAIClient = () => {
 
 export const sendMessageToGemini = async (
   history: Message[],
-  newMessage: string
-): Promise<{ text: string; isSafetyViolation: boolean }> => {
+  newMessage: string,
+  isTeacherMode: boolean = false,
+  studentContext: string = "" 
+): Promise<{ text: string; isSafetyViolation: boolean; relatedStudentId?: string }> => {
   const client = getAIClient();
   
+  let systemInstruction = SYSTEM_INSTRUCTION;
+
+  if (isTeacherMode) {
+      systemInstruction = `You are "TIMI", a helpful AI colleague inside the Teachers' Room. 
+      Your personality: Friendly, professional but warm, helpful, and organized. You are talking to teachers.
+      
+      RULES FOR TEACHER MODE:
+      1. If they greet you or ask "How are you?" (e.g., "timi jan vonc es", "բարև", "ոնց ես"), respond warmly in Armenian. 
+         Example: "Լավ եմ, շնորհակալություն, սիրելի ուսուցիչ։ Դուք ինչպե՞ս եք։ Ինչո՞վ կարող եմ օգնել դասապրոցեսին։"
+      2. If they ask for student info, check the database provided below.
+      3. Keep responses concise and professional.
+      
+      ${studentContext ? `
+      --- STUDENT DATABASE START ---
+      ${studentContext}
+      --- STUDENT DATABASE END ---
+      
+      INSTRUCTION FOR STUDENT INFO:
+      If the teacher asks for information about a specific student (e.g., "bring me info about Aram", "show Test's info", "տուր Արամի ինֆոն"), 
+      you MUST find the student in the list above.
+      
+      If found:
+      1. Respond politely (e.g., "Ահա [Name]-ի տվյալները։").
+      2. CRITICAL: Append the following tag to the VERY END of your response: "[[SHOW_STUDENT_CARD: <student_id>]]".
+         Replace <student_id> with the actual ID from the list.
+      
+      If not found:
+      Politely say you couldn't find a student with that name in the database.
+      ` : ''}
+      `;
+  }
+
   const chatHistory = history.map(msg => ({
     role: msg.role,
     parts: [{ text: msg.text }]
@@ -44,14 +79,30 @@ export const sendMessageToGemini = async (
     const chat = client.chats.create({
       model: 'gemini-3-flash-preview',
       config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        temperature: 0.6,
+        systemInstruction: systemInstruction,
+        temperature: 0.7, 
       },
       history: chatHistory
     });
 
     const result = await chat.sendMessage({ message: newMessage });
-    const responseText = result.text || "";
+    let responseText = result.text;
+
+    // Handle empty/blocked response
+    if (!responseText) {
+        return { text: "Ներողություն, չկարողացա պատասխանել (հնարավոր է անվտանգության ֆիլտր կամ սխալ)։", isSafetyViolation: false };
+    }
+
+    // Check for Student Card Tag
+    let finalText = responseText;
+    let relatedStudentId = undefined;
+    const tagMatch = responseText.match(/\[\[SHOW_STUDENT_CARD:\s*(.+?)\]\]/);
+    
+    if (tagMatch) {
+        relatedStudentId = tagMatch[1].trim();
+        // Remove the tag from the visible text so it looks clean
+        finalText = responseText.replace(tagMatch[0], "").trim();
+    }
 
     // Check for our specific safety flag or general refusal
     if (responseText.includes("SECURITY_ALERT") || responseText.includes("Content not allowed")) {
@@ -61,10 +112,14 @@ export const sendMessageToGemini = async (
       };
     }
 
-    return { text: responseText, isSafetyViolation: false };
-  } catch (error) {
+    return { text: finalText, isSafetyViolation: false, relatedStudentId };
+  } catch (error: any) {
     console.error("Gemini API Error:", error);
-    return { text: "Կապի խափանում։", isSafetyViolation: false };
+    const errParams = error?.message || "";
+    if (errParams.includes("API key")) {
+        return { text: "API Key Error. Խնդրում ենք թարմացնել բանալին։", isSafetyViolation: false };
+    }
+    return { text: "Կապի խափանում։ Խնդրում ենք ստուգել ինտերնետը կամ API կարգավորումները։", isSafetyViolation: false };
   }
 };
 
@@ -76,7 +131,6 @@ export const generateQuizQuestions = async (
 ): Promise<QuizQuestion[]> => {
     const client = getAIClient();
     
-    // Explicitly ask for Armenian
     const prompt = `Generate ${count} multiple choice questions (A, B, C, D) for ${grade} grade students.
     Subject: "${subject}"
     Topic: "${topic}"
@@ -112,10 +166,9 @@ export const generateQuizQuestions = async (
         
         const questions = JSON.parse(text) as any[];
         
-        // Post-process to ensure IDs and correct structure
         return questions.map(q => ({
             id: Math.random().toString(36).substring(2, 15),
-            subject: subject, // Ensure subject matches requested
+            subject: subject, 
             question: q.question,
             options: q.options,
             correctAnswer: q.correctAnswer,
@@ -131,28 +184,55 @@ export const generateQuizQuestions = async (
 export const generateAIAvatar = async (description: string, style: string): Promise<string | null> => {
   const client = getAIClient();
   
-  const prompt = `A cool, friendly ${style} avatar for a school student profile picture. 
+  const prompt = `Generate a cool, friendly ${style} avatar for a school student profile picture. 
   Description: ${description}. 
   Ensure it is safe, appropriate for school, colorful, white or simple background, centered face.`;
 
   try {
-    const response = await client.models.generateImages({
-      model: 'imagen-3.0-generate-001',
-      prompt: prompt,
-      config: {
-        numberOfImages: 1,
-        aspectRatio: '1:1',
-        outputMimeType: 'image/jpeg'
-      },
+    // Switched to gemini-2.5-flash-image for better compatibility with standard keys
+    const response = await client.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: { parts: [{ text: prompt }] },
     });
 
-    if (response.generatedImages && response.generatedImages.length > 0) {
-      const base64String = response.generatedImages[0].image.imageBytes;
-      return `data:image/jpeg;base64,${base64String}`;
+    if (response.candidates && response.candidates[0].content.parts) {
+        for (const part of response.candidates[0].content.parts) {
+            if (part.inlineData) {
+                const base64EncodeString = part.inlineData.data;
+                return `data:image/png;base64,${base64EncodeString}`;
+            }
+        }
     }
     return null;
   } catch (error) {
     console.error("Avatar Generation Error:", error);
     return null;
   }
+};
+
+export const generateImage = async (prompt: string): Promise<string | null> => {
+    const client = getAIClient();
+    const safePrompt = `A child-safe, educational illustration. ${prompt}. No violence, no adult content.`;
+
+    try {
+        const response = await client.models.generateContent({
+            model: 'gemini-2.5-flash-image',
+            contents: {
+                parts: [{ text: safePrompt }]
+            }
+        });
+
+        if (response.candidates && response.candidates[0].content.parts) {
+            for (const part of response.candidates[0].content.parts) {
+                if (part.inlineData) {
+                    const base64EncodeString = part.inlineData.data;
+                    return `data:image/png;base64,${base64EncodeString}`;
+                }
+            }
+        }
+        return null;
+    } catch (error) {
+        console.error("Image Gen Error:", error);
+        return null;
+    }
 };

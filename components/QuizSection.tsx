@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { QuizQuestion, StudentProfile } from '../types';
-import { updateStudentScore, getQuestionsAsync } from '../services/storageService';
+import { updateStudentScore, getQuestionsAsync, incrementStudentQuizAttempt } from '../services/storageService';
 import Button from './Button';
 
 interface QuizSectionProps {
@@ -35,17 +35,27 @@ const QuizSection: React.FC<QuizSectionProps> = ({ student, onScoreUpdate, onBac
     loadData();
   }, []);
 
-  useEffect(() => {
-    if (selectedSubject) {
-      const qs = questions.filter(q => q.subject === selectedSubject)
+  const handleSubjectSelect = (subject: string) => {
+      // Limit Check: Max 2 attempts
+      const attempts = student.quizAttempts?.[subject] || 0;
+      if (attempts >= 2) {
+          alert(`Դուք արդեն սպառել եք ${subject} առարկայի հարցաշարը լրացնելու հնարավորությունները (2/2):`);
+          return;
+      }
+
+      const qs = questions.filter(q => q.subject === subject)
                           .sort(() => 0.5 - Math.random()); // Shuffle
+      
+      if (qs.length === 0) {
+          alert("Այս առարկայից դեռ հարցեր չկան։");
+          return;
+      }
+
+      setSelectedSubject(subject);
       setFilteredQuestions(qs);
       setCurrentQuestionIndex(0);
       resetQuestionState();
-    } else {
-      setFilteredQuestions([]);
-    }
-  }, [selectedSubject, questions]);
+  };
 
   const resetQuestionState = () => {
     setSelectedAnswer(null);
@@ -68,6 +78,7 @@ const QuizSection: React.FC<QuizSectionProps> = ({ student, onScoreUpdate, onBac
       setFeedback('correct');
       setScoreEarned(currentQuestion.points);
       setIsUpdatingScore(true);
+      // Update score in DB
       const updatedStudent = await updateStudentScore(student.id, currentQuestion.points);
       setIsUpdatingScore(false);
       if (updatedStudent) onScoreUpdate(updatedStudent);
@@ -76,12 +87,21 @@ const QuizSection: React.FC<QuizSectionProps> = ({ student, onScoreUpdate, onBac
     }
   };
 
+  const finishQuiz = async () => {
+      // Increment attempt count when quiz finishes
+      if (selectedSubject) {
+         const updatedStudent = await incrementStudentQuizAttempt(student.id, selectedSubject);
+         if (updatedStudent) onScoreUpdate(updatedStudent);
+      }
+      setSelectedSubject(null);
+  };
+
   const handleNextQuestion = () => {
     if (currentQuestionIndex < filteredQuestions.length - 1) {
       setCurrentQuestionIndex(prev => prev + 1);
       resetQuestionState();
     } else {
-      setSelectedSubject(null);
+      finishQuiz();
     }
   };
 
@@ -91,25 +111,33 @@ const QuizSection: React.FC<QuizSectionProps> = ({ student, onScoreUpdate, onBac
     return (
       <div className="bg-white rounded-xl shadow-lg p-8 border border-gray-200 h-full flex flex-col">
         <div className="flex justify-between items-center mb-6">
-           <h2 className="text-2xl font-bold text-gray-800">Choose a Subject</h2>
-           <Button variant="ghost" onClick={onBack}>← Back</Button>
+           <h2 className="text-2xl font-bold text-gray-800">Ընտրեք Առարկան</h2>
+           <Button variant="ghost" onClick={onBack}>← Ետ</Button>
         </div>
         {subjects.length === 0 ? (
-            <p className="text-center text-gray-500 my-10">No questions available yet. Ask your teacher to add some!</p>
+            <p className="text-center text-gray-500 my-10">Հարցեր դեռ չկան։ Խնդրեք ուսուցչին ավելացնել։</p>
         ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {subjects.map(subject => (
+            {subjects.map(subject => {
+                const attempts = student.quizAttempts?.[subject] || 0;
+                const isLimitReached = attempts >= 2;
+                
+                return (
                 <button
-                key={subject}
-                onClick={() => setSelectedSubject(subject)}
-                className="p-6 rounded-xl border-2 border-indigo-100 hover:border-primary hover:bg-indigo-50 transition-all text-left group"
+                    key={subject}
+                    onClick={() => handleSubjectSelect(subject)}
+                    className={`p-6 rounded-xl border-2 text-left transition-all group relative overflow-hidden ${isLimitReached ? 'border-gray-200 bg-gray-50 opacity-60' : 'border-indigo-100 hover:border-primary hover:bg-indigo-50'}`}
                 >
-                <h3 className="text-lg font-bold text-gray-800 group-hover:text-primary mb-2">{subject}</h3>
-                <p className="text-sm text-gray-500">
-                    {questions.filter(q => q.subject === subject).length} questions
-                </p>
+                    <h3 className="text-lg font-bold text-gray-800 group-hover:text-primary mb-2">{subject}</h3>
+                    <p className="text-sm text-gray-500">
+                        {questions.filter(q => q.subject === subject).length} հարց
+                    </p>
+                    <div className="mt-2 flex items-center text-xs font-bold text-gray-400">
+                        Փորձեր: {attempts}/2
+                        {isLimitReached && <span className="ml-2 text-red-500">(Սպառված է)</span>}
+                    </div>
                 </button>
-            ))}
+            )})}
             </div>
         )}
       </div>
@@ -124,15 +152,15 @@ const QuizSection: React.FC<QuizSectionProps> = ({ student, onScoreUpdate, onBac
       <div className="bg-gradient-to-r from-primary to-indigo-700 px-6 py-4 flex justify-between items-center text-white">
         <div>
            <h2 className="text-xl font-bold">{selectedSubject}</h2>
-           <p className="text-xs opacity-80">Question {currentQuestionIndex + 1} / {filteredQuestions.length}</p>
+           <p className="text-xs opacity-80">Հարց {currentQuestionIndex + 1} / {filteredQuestions.length}</p>
         </div>
-        <button onClick={() => setSelectedSubject(null)} className="text-white/80 hover:text-white text-sm bg-white/10 px-3 py-1 rounded">Exit Quiz</button>
+        <button onClick={() => setSelectedSubject(null)} className="text-white/80 hover:text-white text-sm bg-white/10 px-3 py-1 rounded">Դուրս գալ</button>
       </div>
 
       <div className="flex-1 p-6 md:p-10 flex flex-col justify-center max-w-3xl mx-auto w-full overflow-y-auto">
          <div className="mb-8">
             <h3 className="text-2xl md:text-3xl font-bold text-gray-800 leading-tight">{currentQuestion.question}</h3>
-            <span className="inline-block mt-3 px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-bold">{currentQuestion.points} Points</span>
+            <span className="inline-block mt-3 px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-bold">{currentQuestion.points} Միավոր</span>
          </div>
 
          <div className="space-y-3">
@@ -159,12 +187,12 @@ const QuizSection: React.FC<QuizSectionProps> = ({ student, onScoreUpdate, onBac
                  <div className="flex items-center">
                      <span className="text-2xl mr-3">{feedback === 'correct' ? '🎉' : '❌'}</span>
                      <div>
-                         <p className="font-bold">{feedback === 'correct' ? 'Correct!' : 'Incorrect.'}</p>
-                         {feedback === 'correct' && <p className="text-sm">+ {scoreEarned} points</p>}
+                         <p className="font-bold">{feedback === 'correct' ? 'Ճիշտ է!' : 'Սխալ է:'}</p>
+                         {feedback === 'correct' && <p className="text-sm">+ {scoreEarned} միավոր</p>}
                      </div>
                  </div>
                  <Button onClick={handleNextQuestion} disabled={isUpdatingScore} className="w-full sm:w-auto">
-                     {currentQuestionIndex < filteredQuestions.length - 1 ? 'Next Question →' : 'Finish Quiz'}
+                     {currentQuestionIndex < filteredQuestions.length - 1 ? 'Հաջորդ հարցը →' : 'Ավարտել'}
                  </Button>
              </div>
          )}

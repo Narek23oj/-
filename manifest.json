@@ -1,0 +1,24 @@
+
+{
+  "name": "TIMI - Educational Platform",
+  "short_name": "TIMI",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F3F4F6",
+  "theme_color": "#4F46E5",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjUxMiIgaGVpZ2h0PSI1MTIiIGZpbGw9IndoaXRlIi8+PHRleHQgeD0iMzAiIHk9IjI2MCIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXdlaWdodD0iOTAwIiBmb250LXNpemU9IjIyMCIgZmlsbD0iIzUwMjBBMCI+VEk8L3RleHQ+PHRleHQgeD0iMjMwIiB5PSIyNjAiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC13ZWlnaHQ9IjkwMCIgZm9udC1zaXplPSIyMjAiIGZpbGw9IiM1MDIwQTAiPk08L3RleHQ+PHRleHQgeD0iMjQwIiB5PSI0MjAiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC13ZWlnaHQ9IjkwMCIgZm9udC1zaXplPSIxNjAiIGZpbGw9IiM1MDIwQTAiPkE8L3RleHQ+PGNpcmNsZSBjeD0iMjkwIiBjeT0iODAiIHI9IjM1IiBmaWxsPSIjRkY4MDAwIi8+PHRleHQgeD0iMzkwIiB5PSIzNjAiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC13ZWlnaHQ9IjkwMCIgZm9udC1zaXplPSIyNjAiIGZpbGw9IiNGRjgwMDAiPkk8L3RleHQ+PC9zdmc+",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjUxMiIgaGVpZ2h0PSI1MTIiIGZpbGw9IndoaXRlIi8+PHRleHQgeD0iMzAiIHk9IjI2MCIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXdlaWdodD0iOTAwIiBmb250LXNpemU9IjIyMCIgZmlsbD0iIzUwMjBBMCI+VEk8L3RleHQ+PHRleHQgeD0iMjMwIiB5PSIyNjAiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC13ZWlnaHQ9IjkwMCIgZm9udC1zaXplPSIyMjAiIGZpbGw9IiM1MDIwQTAiPk08L3RleHQ+PHRleHQgeD0iMjQwIiB5PSI0MjAiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC13ZWlnaHQ9IjkwMCIgZm9udC1zaXplPSIxNjAiIGZpbGw9IiM1MDIwQTAiPkE8L3RleHQ+PGNpcmNsZSBjeD0iMjkwIiBjeT0iODAiIHI9IjM1IiBmaWxsPSIjRkY4MDAwIi8+PHRleHQgeD0iMzkwIiB5PSIzNjAiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC13ZWlnaHQ9IjkwMCIgZm9udC1zaXplPSIyNjAiIGZpbGw9IiNGRjgwMDAiPkk8L3RleHQ+PC9zdmc+",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

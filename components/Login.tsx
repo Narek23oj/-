@@ -1,9 +1,18 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Input from './Input';
 import Button from './Button';
-import { ADMIN_USERNAMES, ADMIN_PASSWORD, StudentProfile } from '../types';
-import { findStudentByNameAndGrade } from '../services/storageService';
+import { ADMIN_PASSWORD, SUPER_ADMIN_PASSWORD, SUPER_ADMINS, StudentProfile, INITIAL_ADMINS } from '../types';
+import { findStudentByNameAndGrade, getTeacherList } from '../services/storageService';
+
+// Custom SVG Logo Component for TIMI (White Version for Login)
+const TIMILogoWhite = () => (
+    <svg width="140" height="56" viewBox="0 0 100 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <text x="5" y="32" fontFamily="Arial, sans-serif" fontWeight="900" fontSize="34" fill="#FFFFFF" letterSpacing="2">TIMI</text>
+        <circle cx="92" cy="14" r="5" fill="#F59E0B" />
+        <rect x="88" y="22" width="8" height="10" fill="#F59E0B" />
+    </svg>
+);
 
 interface LoginProps {
   onLoginStudent: (student: StudentProfile) => void;
@@ -28,6 +37,12 @@ const Login: React.FC<LoginProps> = ({ onLoginStudent, onStudentSetupRequired, o
   const [adminUsername, setAdminUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [validTeachers, setValidTeachers] = useState<string[]>(INITIAL_ADMINS);
+
+  // Load teachers on mount
+  useEffect(() => {
+      getTeacherList().then(list => setValidTeachers(list));
+  }, []);
 
   const resetForm = () => {
     setName('');
@@ -102,42 +117,55 @@ const Login: React.FC<LoginProps> = ({ onLoginStudent, onStudentSetupRequired, o
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
     const cleanUsername = adminUsername.trim();
-    if (ADMIN_USERNAMES.includes(cleanUsername) && password === ADMIN_PASSWORD) {
-      onLoginAdmin(cleanUsername);
+    
+    // 1. Super Admin Check
+    if (SUPER_ADMINS.includes(cleanUsername)) {
+        if (password === SUPER_ADMIN_PASSWORD) {
+            onLoginAdmin(cleanUsername);
+        } else {
+            setError('Սխալ գաղտնաբառ (Սուպեր Ադմին)։');
+        }
+        return;
+    }
+
+    // 2. Regular Admin Check
+    if (validTeachers.includes(cleanUsername)) {
+        if (password === ADMIN_PASSWORD) {
+            onLoginAdmin(cleanUsername);
+        } else {
+            setError('Սխալ գաղտնաբառ։');
+        }
     } else {
-      setError('Սխալ մուտքանուն կամ գաղտնաբառ');
+        setError('Սխալ մուտքանուն։');
     }
   };
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row">
+    <div className="min-h-screen flex flex-col md:flex-row relative z-10">
       {/* Left Side - Educational Info */}
-      <div className="md:w-1/2 bg-gradient-to-br from-primary to-indigo-800 p-8 md:p-16 text-white flex flex-col justify-center relative overflow-hidden z-10">
-        <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
-        <div className="relative z-10">
-          <h1 className="text-5xl font-bold mb-2 tracking-tight">ԹԻՄԻ</h1>
-          <p className="text-xl opacity-90 mb-12">by YEGHIAZARYAN NAREK</p>
+      <div className="md:w-1/2 bg-gradient-to-br from-primary/95 to-indigo-900/95 p-6 md:p-16 text-white flex flex-col justify-center relative overflow-hidden backdrop-blur-sm">
+        <div className="relative z-10 animate-float flex flex-col items-center md:items-start text-center md:text-left">
+          <div className="mb-4">
+              <TIMILogoWhite />
+          </div>
+          <p className="text-lg md:text-xl opacity-90 mb-8 md:mb-12 drop-shadow font-light">by YEGHIAZARYAN NAREK</p>
 
-          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-8 border border-white/20">
-            <h3 className="text-2xl font-semibold mb-6 flex items-center">
+          <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 md:p-8 border border-white/20 shadow-2xl max-w-md w-full">
+            <h3 className="text-xl md:text-2xl font-semibold mb-4 md:mb-6 flex items-center justify-center md:justify-start">
               <span className="mr-2">📚</span> Կրթական Սկզբունք
             </h3>
-            <ul className="space-y-4 text-lg">
+            <ul className="space-y-3 md:space-y-4 text-base md:text-lg text-left">
               <li className="flex items-start">
-                <span className="mr-3 mt-1 text-secondary">✓</span>
-                Կարևոր է հասկանալ թեման, ոչ թե պարզապես ստանալ պատասխանը։
+                <span className="mr-3 mt-1 text-secondary font-bold text-lg">✓</span>
+                <span className="flex-1">Կարևոր է հասկանալ թեման, ոչ թե պարզապես ստանալ պատասխանը։</span>
               </li>
               <li className="flex items-start">
-                <span className="mr-3 mt-1 text-secondary">✓</span>
-                Հարթակը չի տալիս պատրաստի լուծումներ։
+                <span className="mr-3 mt-1 text-secondary font-bold text-lg">✓</span>
+                <span className="flex-1">Հարթակը չի տալիս պատրաստի լուծումներ։</span>
               </li>
               <li className="flex items-start">
-                <span className="mr-3 mt-1 text-secondary">✓</span>
-                Խրախուսվում է ինքնուրույն մտածողությունը։
-              </li>
-              <li className="flex items-start">
-                <span className="mr-3 mt-1 text-secondary">✓</span>
-                Սովորում ենք սխալվելով և ուղղելով։
+                <span className="mr-3 mt-1 text-secondary font-bold text-lg">✓</span>
+                <span className="flex-1">Խրախուսվում է ինքնուրույն մտածողությունը։</span>
               </li>
             </ul>
           </div>
@@ -145,17 +173,17 @@ const Login: React.FC<LoginProps> = ({ onLoginStudent, onStudentSetupRequired, o
       </div>
 
       {/* Right Side - Forms */}
-      <div className="md:w-1/2 bg-white flex items-center justify-center p-8 z-0">
-        <div className="w-full max-w-md">
+      <div className="md:w-1/2 flex items-center justify-center p-4 md:p-8 z-0 bg-white/50">
+        <div className="w-full max-w-md bg-white/90 backdrop-blur-md p-6 md:p-8 rounded-2xl shadow-xl border border-white">
           {/* Top Navigation for Mode */}
-          <div className="flex justify-between items-center mb-8">
+          <div className="flex justify-between items-center mb-6 md:mb-8">
              {authMode === 'ADMIN' ? (
                  <Button 
                     variant="ghost"
                     onClick={() => handleModeChange('STUDENT')}
                     className="text-gray-500 hover:text-primary font-medium"
                   >
-                    ← Վերադառնալ
+                    ← Ետ
                  </Button>
              ) : (
                 <h2 className="text-2xl font-bold text-gray-800">Մուտք</h2>
@@ -172,28 +200,28 @@ const Login: React.FC<LoginProps> = ({ onLoginStudent, onStudentSetupRequired, o
              )}
           </div>
 
-          <div className="mb-8 text-center">
+          <div className="mb-6 md:mb-8 text-center">
             {authMode === 'ADMIN' && (
                 <>
-                <h2 className="text-3xl font-bold text-gray-800 mb-2">Admin Մուտք</h2>
-                <p className="text-gray-500">Մուտք գործեք կառավարման վահանակ</p>
+                <h2 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2">Admin Panel</h2>
+                <p className="text-sm md:text-base text-gray-500">Մուտք գործեք կառավարման վահանակ</p>
                 </>
             )}
             {authMode === 'STUDENT' && (
-                <p className="text-gray-500">
+                <p className="text-gray-500 text-sm md:text-base">
                     {showPasswordInput ? `Բարև, ${foundStudent?.name}` : 'Մուտքագրեք ձեր տվյալները սկսելու համար'}
                 </p>
             )}
           </div>
 
           {error && (
-            <div className="mb-6 bg-red-50 border-l-4 border-red-500 p-4 text-red-700 rounded-r">
+            <div className="mb-6 bg-red-50 border-l-4 border-red-500 p-4 text-red-700 rounded-r shadow-sm text-sm">
               <p>{error}</p>
             </div>
           )}
 
           {authMode === 'ADMIN' && (
-            <form onSubmit={handleAdminLogin} className="space-y-6">
+            <form onSubmit={handleAdminLogin} className="space-y-4 md:space-y-6">
               <Input
                 label="Admin Username"
                 value={adminUsername}
@@ -202,7 +230,7 @@ const Login: React.FC<LoginProps> = ({ onLoginStudent, onStudentSetupRequired, o
                 list="admin-list"
               />
               <datalist id="admin-list">
-                  {ADMIN_USERNAMES.map(u => <option key={u} value={u} />)}
+                  {validTeachers.map(u => <option key={u} value={u} />)}
               </datalist>
               <Input
                 label="Password"
@@ -211,14 +239,14 @@ const Login: React.FC<LoginProps> = ({ onLoginStudent, onStudentSetupRequired, o
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Մուտքագրեք գաղտնաբառը"
               />
-              <Button type="submit" className="w-full py-3 text-lg">
+              <Button type="submit" className="w-full py-3 text-lg mt-2">
                 Մուտք
               </Button>
             </form>
           )}
 
           {authMode === 'STUDENT' && !showPasswordInput && (
-            <form onSubmit={handleStudentCheck} className="space-y-6">
+            <form onSubmit={handleStudentCheck} className="space-y-4 md:space-y-6">
               <Input
                 label="Անուն Ազգանուն"
                 value={name}
@@ -234,14 +262,14 @@ const Login: React.FC<LoginProps> = ({ onLoginStudent, onStudentSetupRequired, o
                 min="1"
                 max="12"
               />
-              <Button type="submit" isLoading={isLoading} className="w-full py-3 text-lg shadow-lg shadow-indigo-200">
+              <Button type="submit" isLoading={isLoading} className="w-full py-3 text-lg shadow-lg shadow-indigo-200 hover:shadow-indigo-300 transition-shadow mt-2">
                 Շարունակել
               </Button>
             </form>
           )}
 
           {authMode === 'STUDENT' && showPasswordInput && (
-              <form onSubmit={handleStudentFinalLogin} className="space-y-6">
+              <form onSubmit={handleStudentFinalLogin} className="space-y-4 md:space-y-6">
                   <Input
                     label="Գաղտնաբառ"
                     type="password"
@@ -249,7 +277,7 @@ const Login: React.FC<LoginProps> = ({ onLoginStudent, onStudentSetupRequired, o
                     onChange={(e) => setStudentPassword(e.target.value)}
                     placeholder="Մուտքագրեք գաղտնաբառը"
                   />
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 mt-4">
                       <Button variant="ghost" onClick={resetForm} className="flex-1">Ետ</Button>
                       <Button type="submit" className="flex-1 shadow-lg shadow-indigo-200">Մուտք</Button>
                   </div>

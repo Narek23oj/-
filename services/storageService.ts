@@ -1,199 +1,299 @@
 
 import { ChatSession, StudentProfile, QuizQuestion } from '../types';
+import { initializeApp } from 'firebase/app';
+import { 
+  getFirestore, 
+  collection, 
+  doc, 
+  setDoc, 
+  getDocs, 
+  query, 
+  onSnapshot, 
+  deleteDoc,
+  updateDoc,
+  orderBy,
+  where,
+  getDoc
+} from 'firebase/firestore';
 
-// NOTE: Firebase imports removed due to environment configuration issues.
-// The application will run using LocalStorage for persistence.
-
-const STORAGE_KEYS = {
-  SESSIONS: 'timi_sessions',
-  STUDENTS: 'timi_students',
-  QUESTIONS: 'timi_questions',
-  TEACHERS: 'timi_teachers'
+// --- Firebase Configuration ---
+// Ensure you have a .env file with these values or configure them in your deployment platform
+const firebaseConfig = {
+  apiKey: process.env.FIREBASE_API_KEY,
+  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.FIREBASE_PROJECT_ID,
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.FIREBASE_APP_ID
 };
 
-const isFirebaseEnabled = false; 
+let db: any;
 
-// Helper for LocalStorage events
-const dispatchStorageEvent = (key: string) => {
-  window.dispatchEvent(new Event(key));
+// Fallback for development if keys are missing (prevents crash, but sync won't work)
+try {
+    if (firebaseConfig.apiKey) {
+        const app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
+        console.log("🔥 Firebase initialized successfully.");
+    } else {
+        console.warn("⚠️ Firebase keys missing. App running in non-sync mode (UI only).");
+    }
+} catch (e) {
+    console.error("Firebase init error:", e);
+}
+
+// Collections
+const COLLECTIONS = {
+    STUDENTS: 'students',
+    SESSIONS: 'sessions',
+    QUESTIONS: 'questions',
+    TEACHERS: 'teachers'
 };
 
-// --- Subscription Helpers ---
+// --- MIGRATION UTILITY (Run once to push LocalStorage to Firebase) ---
+export const migrateLocalToCloud = async (): Promise<string> => {
+    if (!db) return "Firebase not configured.";
+    
+    let count = 0;
+    try {
+        // Migrate Students
+        const localStudents = localStorage.getItem('timi_students');
+        if (localStudents) {
+            const students: StudentProfile[] = JSON.parse(localStudents);
+            for (const s of students) {
+                await setDoc(doc(db, COLLECTIONS.STUDENTS, s.id), s, { merge: true });
+                count++;
+            }
+        }
+
+        // Migrate Questions
+        const localQuestions = localStorage.getItem('timi_questions');
+        if (localQuestions) {
+            const questions: QuizQuestion[] = JSON.parse(localQuestions);
+            for (const q of questions) {
+                await setDoc(doc(db, COLLECTIONS.QUESTIONS, q.id), q, { merge: true });
+                count++;
+            }
+        }
+
+        // Migrate Sessions
+        const localSessions = localStorage.getItem('timi_sessions');
+        if (localSessions) {
+            const sessions: ChatSession[] = JSON.parse(localSessions);
+            for (const s of sessions) {
+                await setDoc(doc(db, COLLECTIONS.SESSIONS, s.id), s, { merge: true });
+                count++;
+            }
+        }
+        
+        return `Successfully migrated ${count} items to Cloud!`;
+    } catch (e: any) {
+        console.error(e);
+        return `Migration failed: ${e.message}`;
+    }
+};
+
+// --- REAL-TIME SUBSCRIPTIONS ---
 
 export const subscribeToStudents = (callback: (students: StudentProfile[]) => void) => {
-  const handler = () => { callback(getStudentsSync()); };
-  window.addEventListener('storage', handler);
-  window.addEventListener(STORAGE_KEYS.STUDENTS, handler);
-  const interval = setInterval(handler, 2000);
-  handler();
-  return () => { 
-    window.removeEventListener('storage', handler); 
-    window.removeEventListener(STORAGE_KEYS.STUDENTS, handler);
-    clearInterval(interval); 
-  };
+  if (!db) return () => {};
+  const q = query(collection(db, COLLECTIONS.STUDENTS));
+  const unsubscribe = onSnapshot(q, (snapshot) => {
+    const students: StudentProfile[] = [];
+    snapshot.forEach((doc) => {
+      students.push(doc.data() as StudentProfile);
+    });
+    callback(students);
+  });
+  return unsubscribe;
 };
 
 export const subscribeToSessions = (callback: (sessions: ChatSession[]) => void) => {
-  const handler = () => { callback(getAllSessionsSync()); };
-  window.addEventListener('storage', handler);
-  window.addEventListener(STORAGE_KEYS.SESSIONS, handler);
-  const interval = setInterval(handler, 2000);
-  handler();
-  return () => { 
-      window.removeEventListener('storage', handler); 
-      window.removeEventListener(STORAGE_KEYS.SESSIONS, handler);
-      clearInterval(interval); 
-  };
+  if (!db) return () => {};
+  const q = query(collection(db, COLLECTIONS.SESSIONS), orderBy('startTime', 'desc'));
+  const unsubscribe = onSnapshot(q, (snapshot) => {
+      const sessions: ChatSession[] = [];
+      snapshot.forEach((doc) => sessions.push(doc.data() as ChatSession));
+      callback(sessions);
+  });
+  return unsubscribe;
 };
 
 export const subscribeToStudentSessions = (studentId: string, callback: (sessions: ChatSession[]) => void) => {
-  const handler = () => { 
-      const all = getAllSessionsSync();
-      const filtered = all.filter(s => s.studentId === studentId).sort((a,b) => b.startTime - a.startTime);
-      callback(filtered);
-  };
-  window.addEventListener('storage', handler);
-  window.addEventListener(STORAGE_KEYS.SESSIONS, handler);
-  handler();
-  return () => { 
-      window.removeEventListener('storage', handler); 
-      window.removeEventListener(STORAGE_KEYS.SESSIONS, handler);
-  };
+  if (!db) return () => {};
+  // Firestore composite index might be needed for where + orderBy. 
+  // If failed, check console for link to create index.
+  const q = query(
+      collection(db, COLLECTIONS.SESSIONS), 
+      where('studentId', '==', studentId)
+  );
+  
+  const unsubscribe = onSnapshot(q, (snapshot) => {
+      let sessions: ChatSession[] = [];
+      snapshot.forEach((doc) => sessions.push(doc.data() as ChatSession));
+      // Sort client-side to avoid complex index requirements for simple app
+      sessions.sort((a, b) => b.startTime - a.startTime);
+      callback(sessions);
+  });
+  return unsubscribe;
 };
 
 export const subscribeToQuestions = (callback: (questions: QuizQuestion[]) => void) => {
-  const handler = () => { 
-      const data = localStorage.getItem(STORAGE_KEYS.QUESTIONS);
-      callback(data ? JSON.parse(data) : []);
-  };
-  window.addEventListener('storage', handler);
-  window.addEventListener(STORAGE_KEYS.QUESTIONS, handler);
-  const interval = setInterval(handler, 2000);
-  handler();
-  return () => { 
-      window.removeEventListener('storage', handler); 
-      window.removeEventListener(STORAGE_KEYS.QUESTIONS, handler);
-      clearInterval(interval); 
-  };
+  if (!db) return () => {};
+  const q = query(collection(db, COLLECTIONS.QUESTIONS));
+  const unsubscribe = onSnapshot(q, (snapshot) => {
+      const questions: QuizQuestion[] = [];
+      snapshot.forEach((doc) => questions.push(doc.data() as QuizQuestion));
+      callback(questions);
+  });
+  return unsubscribe;
 };
 
-// --- Teacher Management ---
+// --- TEACHER MANAGEMENT ---
 
 export const saveTeacherAvatar = async (username: string, avatarUrl: string): Promise<void> => {
-    const teachers = getTeachersSync();
-    teachers[username] = avatarUrl;
-    localStorage.setItem(STORAGE_KEYS.TEACHERS, JSON.stringify(teachers));
-    dispatchStorageEvent(STORAGE_KEYS.TEACHERS);
+    if (!db) return;
+    // We store teachers in a 'teachers' collection where doc ID is username
+    await setDoc(doc(db, COLLECTIONS.TEACHERS, username), { avatar: avatarUrl }, { merge: true });
 };
 
 export const getTeacherAvatar = async (username: string): Promise<string | null> => {
-    const teachers = getTeachersSync();
-    return teachers[username] || null;
+    if (!db) return null;
+    try {
+        const docRef = doc(db, COLLECTIONS.TEACHERS, username);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+            return docSnap.data().avatar || null;
+        }
+    } catch (e) {
+        console.warn("Error fetching avatar", e);
+    }
+    return null;
 };
 
-const getTeachersSync = (): Record<string, string> => {
-    const data = localStorage.getItem(STORAGE_KEYS.TEACHERS);
-    return data ? JSON.parse(data) : {};
-};
-
-// --- Student Management ---
+// --- STUDENT OPERATIONS ---
 
 export const saveStudent = async (student: StudentProfile): Promise<void> => {
-  const students = getStudentsSync();
-  const index = students.findIndex(s => s.id === student.id);
-  if (index >= 0) students[index] = { ...students[index], ...student };
-  else students.push({ ...student, score: student.score || 0 });
-  localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(students));
-  dispatchStorageEvent(STORAGE_KEYS.STUDENTS);
+  if (!db) return;
+  // Use merge: true to avoid overwriting existing fields if we just want to update partials.
+  // This ensures we don't accidentally delete fields like 'score' if they aren't passed in the update.
+  await setDoc(doc(db, COLLECTIONS.STUDENTS, student.id), student, { merge: true });
 };
 
 export const updateStudentScore = async (studentId: string, pointsToAdd: number): Promise<StudentProfile | null> => {
-    let updatedStudent: StudentProfile | null = null;
-    const students = getStudentsSync();
-    const index = students.findIndex(s => s.id === studentId);
-    if (index >= 0) {
-      students[index].score = (students[index].score || 0) + pointsToAdd;
-      localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(students));
-      dispatchStorageEvent(STORAGE_KEYS.STUDENTS);
-      updatedStudent = students[index];
-    }
-    return updatedStudent;
+    if (!db) return null;
+    const docRef = doc(db, COLLECTIONS.STUDENTS, studentId);
+    
+    try {
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+            const currentData = docSnap.data() as StudentProfile;
+            const newScore = (currentData.score || 0) + pointsToAdd;
+            await updateDoc(docRef, { score: newScore });
+            return { ...currentData, score: newScore };
+        }
+    } catch(e) { console.error(e); }
+    return null;
 };
 
 export const setStudentScore = async (studentId: string, newScore: number): Promise<void> => {
-    const students = getStudentsSync();
-    const index = students.findIndex(s => s.id === studentId);
-    if (index >= 0) {
-        students[index].score = newScore;
-        localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(students));
-        dispatchStorageEvent(STORAGE_KEYS.STUDENTS);
-    }
+    if (!db) return;
+    const docRef = doc(db, COLLECTIONS.STUDENTS, studentId);
+    await updateDoc(docRef, { score: newScore });
 }
 
-export const getStudentsAsync = async (): Promise<StudentProfile[]> => {
-  return getStudentsSync();
-};
-
-const getStudentsSync = (): StudentProfile[] => {
-  const data = localStorage.getItem(STORAGE_KEYS.STUDENTS);
-  return data ? JSON.parse(data) : [];
-};
-
 export const findStudentByNameAndGrade = async (name: string, grade: string): Promise<StudentProfile | undefined> => {
-  const students = await getStudentsAsync();
-  return students.find(
-    s => s.name.toLowerCase().trim() === name.toLowerCase().trim() && 
-         s.grade.trim() === grade.trim()
-  );
+    if (!db) return undefined;
+    
+    // Optimized: We perform the fetch. Since we are using Firestore, 
+    // getting the docs directly ensures we have the latest data from the server.
+    // Note: Firestore queries are case-sensitive by default. To support case-insensitive
+    // search without 3rd party tools (Algolia/Typesense), we fetch the collection (if small)
+    // or rely on exact match. Here we stick to client-side filtering for flexibility on small datasets.
+    
+    const q = query(collection(db, COLLECTIONS.STUDENTS));
+    const snapshot = await getDocs(q);
+    const students: StudentProfile[] = [];
+    snapshot.forEach(d => students.push(d.data() as StudentProfile));
+
+    // Client-side robust matching
+    const searchName = name.toLowerCase().replace(/\s+/g, ' ').trim();
+    const searchGrade = grade.trim();
+
+    return students.find(
+        s => s.name.toLowerCase().replace(/\s+/g, ' ').trim() === searchName && 
+             s.grade.trim() === searchGrade
+    );
 };
 
 export const toggleStudentBlockStatus = async (studentId: string): Promise<void> => {
-    const students = getStudentsSync();
-    const index = students.findIndex(s => s.id === studentId);
-    if (index >= 0) {
-        students[index].isBlocked = !students[index].isBlocked;
-        localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(students));
-        dispatchStorageEvent(STORAGE_KEYS.STUDENTS);
+    if (!db) return;
+    const docRef = doc(db, COLLECTIONS.STUDENTS, studentId);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+        const isBlocked = docSnap.data().isBlocked;
+        await updateDoc(docRef, { isBlocked: !isBlocked });
     }
 };
 
 export const deleteStudent = async (studentId: string): Promise<void> => {
-    const students = getStudentsSync().filter(s => s.id !== studentId);
-    localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(students));
-    dispatchStorageEvent(STORAGE_KEYS.STUDENTS);
+    if (!db) return;
+    await deleteDoc(doc(db, COLLECTIONS.STUDENTS, studentId));
 };
 
-// --- Question Management ---
+// --- QUESTION OPERATIONS ---
 
 export const saveQuestion = async (question: QuizQuestion): Promise<void> => {
-    const questions = getQuestionsSync();
-    questions.push(question);
-    localStorage.setItem(STORAGE_KEYS.QUESTIONS, JSON.stringify(questions));
-    dispatchStorageEvent(STORAGE_KEYS.QUESTIONS);
+    if (!db) return;
+    await setDoc(doc(db, COLLECTIONS.QUESTIONS, question.id), question, { merge: true });
 };
 
 export const deleteQuestion = async (questionId: string): Promise<void> => {
-    const questions = getQuestionsSync().filter(q => q.id !== questionId);
-    localStorage.setItem(STORAGE_KEYS.QUESTIONS, JSON.stringify(questions));
-    dispatchStorageEvent(STORAGE_KEYS.QUESTIONS);
+    if (!db) return;
+    await deleteDoc(doc(db, COLLECTIONS.QUESTIONS, questionId));
 };
 
 export const getQuestionsAsync = async (): Promise<QuizQuestion[]> => {
-    return getQuestionsSync();
+    if (!db) return [];
+    const q = query(collection(db, COLLECTIONS.QUESTIONS));
+    const snapshot = await getDocs(q);
+    const questions: QuizQuestion[] = [];
+    snapshot.forEach(d => questions.push(d.data() as QuizQuestion));
+    return questions;
 };
 
-const getQuestionsSync = (): QuizQuestion[] => {
-    const data = localStorage.getItem(STORAGE_KEYS.QUESTIONS);
-    return data ? JSON.parse(data) : [];
+// --- SESSION OPERATIONS ---
+
+export const saveSession = async (session: ChatSession): Promise<void> => {
+    if (!db) return;
+    await setDoc(doc(db, COLLECTIONS.SESSIONS, session.id), session, { merge: true });
 };
 
-// --- Bulk Import ---
+export const deleteSession = async (sessionId: string): Promise<void> => {
+    if (!db) return;
+    await deleteDoc(doc(db, COLLECTIONS.SESSIONS, sessionId));
+};
+
+// --- UTILS ---
+
+export const generateId = (): string => {
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+};
+
+// --- BULK IMPORT ---
 
 export const bulkImportStudents = async (csvContent: string): Promise<{ added: number, errors: string[] }> => {
+    if (!db) return { added: 0, errors: ["Database not connected"] };
+
     const lines = csvContent.split('\n');
     let addedCount = 0;
     const errors: string[] = [];
-    const currentStudents = await getStudentsAsync();
+    
+    // Fetch current to avoid dupes (naive check)
+    const q = query(collection(db, COLLECTIONS.STUDENTS));
+    const snapshot = await getDocs(q);
+    const currentStudents: StudentProfile[] = [];
+    snapshot.forEach(d => currentStudents.push(d.data() as StudentProfile));
 
     const startIndex = (lines[0].toLowerCase().includes('name') || lines[0].toLowerCase().includes('անուն')) ? 1 : 0;
 
@@ -237,12 +337,18 @@ export const bulkImportStudents = async (csvContent: string): Promise<{ added: n
     return { added: addedCount, errors };
 };
 
-// --- Database Backup/Restore ---
-
 export const exportDatabase = async (): Promise<string> => {
-    const students = await getStudentsAsync();
-    const sessions = await getAllSessionsAsync();
-    const questions = await getQuestionsAsync();
+    if (!db) return "{}";
+    
+    // Fetch all collections manually
+    const studentsSnap = await getDocs(collection(db, COLLECTIONS.STUDENTS));
+    const sessionsSnap = await getDocs(collection(db, COLLECTIONS.SESSIONS));
+    const questionsSnap = await getDocs(collection(db, COLLECTIONS.QUESTIONS));
+
+    const students = studentsSnap.docs.map(d => d.data());
+    const sessions = sessionsSnap.docs.map(d => d.data());
+    const questions = questionsSnap.docs.map(d => d.data());
+
     const data = { students, sessions, questions, timestamp: Date.now() };
     return JSON.stringify(data, null, 2);
 };
@@ -258,34 +364,4 @@ export const restoreDatabase = async (jsonContent: string): Promise<boolean> => 
         console.error("Failed to restore", e);
         return false;
     }
-};
-
-// --- Session Management ---
-
-export const saveSession = async (session: ChatSession): Promise<void> => {
-  const sessions = getAllSessionsSync();
-  const index = sessions.findIndex(s => s.id === session.id);
-  if (index >= 0) sessions[index] = session;
-  else sessions.push(session);
-  localStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify(sessions));
-  dispatchStorageEvent(STORAGE_KEYS.SESSIONS);
-};
-
-export const getAllSessionsAsync = async (): Promise<ChatSession[]> => {
-    return getAllSessionsSync();
-};
-
-const getAllSessionsSync = (): ChatSession[] => {
-  const data = localStorage.getItem(STORAGE_KEYS.SESSIONS);
-  return data ? JSON.parse(data) : [];
-};
-
-export const deleteSession = async (sessionId: string): Promise<void> => {
-    const sessions = getAllSessionsSync().filter(s => s.id !== sessionId);
-    localStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify(sessions));
-    dispatchStorageEvent(STORAGE_KEYS.SESSIONS);
-};
-
-export const generateId = (): string => {
-  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 };

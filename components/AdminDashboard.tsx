@@ -16,7 +16,8 @@ import {
     deleteQuestion,
     setStudentScore,
     saveTeacherAvatar,
-    getTeacherAvatar
+    getTeacherAvatar,
+    migrateLocalToCloud
 } from '../services/storageService';
 import { generateQuizQuestions } from '../services/geminiService';
 import { ChatSession, StudentProfile, QuizQuestion, ADMIN_USERNAMES, MAIN_ADMIN } from '../types';
@@ -76,6 +77,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
   const [aiTopic, setAiTopic] = useState('');
   const [aiGrade, setAiGrade] = useState('5');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isMigrating, setIsMigrating] = useState(false);
 
   // Camera & Refs
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -114,6 +116,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
   const filteredSessions = sessions.filter(s => 
       s.studentName.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // --- Migration Logic ---
+  const handleMigrate = async () => {
+      if(!window.confirm("Այս գործողությունը կուղարկի ձեր սարքի հին տվյալները Cloud: Շարունակե՞լ:")) return;
+      setIsMigrating(true);
+      const res = await migrateLocalToCloud();
+      alert(res);
+      setIsMigrating(false);
+  };
 
   // --- Admin Profile Logic ---
   const handleAdminAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -351,6 +362,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
     const finalTeacher = studentTeacher.trim() || ADMIN_USERNAMES[0];
 
     const finalAvatar = customAvatarUrl.trim() || studentAvatar;
+
+    // Preserve existing data if editing
+    const existingStudent = editingStudentId ? students.find(s => s.id === editingStudentId) : null;
+
     const studentToSave: StudentProfile = {
         id: editingStudentId || generateId(),
         name: studentName.trim(),
@@ -358,12 +373,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
         teacherName: finalTeacher,
         password: studentPassword.trim(), 
         avatar: finalAvatar,
-        joinedAt: Date.now(),
-        isBlocked: false,
-        score: editingStudentId ? (students.find(s=>s.id===editingStudentId)?.score) : 0
+        // Crucial: Preserve joinedAt if editing, or set new if adding
+        joinedAt: existingStudent?.joinedAt || Date.now(),
+        isBlocked: existingStudent?.isBlocked || false,
+        score: existingStudent?.score || 0
     };
     
     try {
+        // saveStudent now uses { merge: true }, ensuring we don't accidentally wipe
+        // fields that might exist in DB but not in our interface (future-proofing)
         await saveStudent(studentToSave);
         closeModal();
     } catch (err) {
@@ -380,6 +398,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
           {adminUsername && <p className="text-gray-500 font-medium">Welcome, {adminUsername}</p>}
         </div>
         <div className="flex gap-2">
+            <Button 
+                variant="primary" 
+                onClick={handleMigrate} 
+                isLoading={isMigrating}
+                className="bg-orange-600 hover:bg-orange-700 text-white"
+            >
+                ☁️ Sync Local Data
+            </Button>
             <Button variant="ghost" onClick={handleExportData} className="bg-white border">Backup</Button>
             <Button variant="ghost" onClick={() => backupInputRef.current?.click()} className="bg-white border">Restore</Button>
             <input type="file" ref={backupInputRef} onChange={handleRestoreData} className="hidden" accept=".json" />

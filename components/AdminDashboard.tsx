@@ -26,12 +26,13 @@ import {
     subscribeToTeacherMessages,
     sendTeacherMessage
 } from '../services/storageService';
-import { generateQuizQuestions, sendMessageToGemini } from '../services/geminiService';
-import { ChatSession, StudentProfile, QuizQuestion, SUPER_ADMINS, MAIN_ADMIN, Notification, TeacherProfile, INITIAL_ADMINS, TeacherMessage } from '../types';
+import { sendMessageToGemini } from '../services/geminiService';
+import { ChatSession, StudentProfile, QuizQuestion, SUPER_ADMINS, MAIN_ADMIN, Notification, TeacherProfile, INITIAL_ADMINS, TeacherMessage, Message } from '../types';
 import Button from './Button';
 import Input from './Input';
 import MarkdownRenderer from './MarkdownRenderer';
 import Avatar from './Avatar'; 
+import { AdminTabs } from './AdminTabs';
 
 // Reuse Logo for Admin Dashboard (Purple text)
 const TIMILogoAdmin = () => (
@@ -97,10 +98,24 @@ interface AdminDashboardProps {
     adminUsername?: string | null;
 }
 
+const ADMIN_TABS = (
+  isSuperAdmin: boolean,
+  flaggedSessionsCount: number
+) => [
+  { id: 'sessions', label: `Chat (⚠️ ${flaggedSessionsCount})` },
+  { id: 'teachers_room', label: '☕ Ուսուցչանոց' },
+  { id: 'students', label: 'Students' },
+  { id: 'quizzes', label: 'Quiz' },
+  { id: 'notifications', label: '🔔 Notifs' },
+  { id: 'profile', label: 'Profile' },
+  ...(isSuperAdmin ? [{ id: 'teachers', label: '👨‍🏫 Teachers' }] : []),
+  { id: 'archive', label: '🗄️ Archive' }
+];
+
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername }) => {
   const isSuperAdmin = adminUsername ? SUPER_ADMINS.includes(adminUsername) : false;
 
-  const [activeTab, setActiveTab] = useState<'sessions' | 'students' | 'quizzes' | 'profile' | 'notifications' | 'teachers' | 'teachers_room'>('sessions');
+  const [activeTab, setActiveTab] = useState<'sessions' | 'students' | 'quizzes' | 'profile' | 'notifications' | 'teachers' | 'teachers_room' | 'archive'>('sessions');
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [students, setStudents] = useState<StudentProfile[]>([]);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
@@ -144,6 +159,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
   const [isAiTyping, setIsAiTyping] = useState(false); 
   const teacherChatEndRef = useRef<HTMLDivElement>(null);
 
+  // Quick Message State
+  const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
+  const [messageTargetStudent, setMessageTargetStudent] = useState<StudentProfile | null>(null);
+  const [quickMessage, setQuickMessage] = useState('');
+
   // Admin Profile State
   const [adminAvatar, setAdminAvatar] = useState('');
   const [adminAvatarPreview, setAdminAvatarPreview] = useState('');
@@ -157,7 +177,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
   const [quizSearchTerm, setQuizSearchTerm] = useState('');
   const [selectedFilterSubject, setSelectedFilterSubject] = useState<string>('All');
   const [isQuestionModalOpen, setIsQuestionModalOpen] = useState(false);
-  const [isAIGeneratorOpen, setIsAIGeneratorOpen] = useState(false);
+
 
   const [newSubject, setNewSubject] = useState('');
   const [newQuestionText, setNewQuestionText] = useState('');
@@ -165,10 +185,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
   const [correctOption, setCorrectOption] = useState(0);
   const [newPoints, setNewPoints] = useState(10);
 
-  // AI Generator State
-  const [aiTopic, setAiTopic] = useState('');
-  const [aiGrade, setAiGrade] = useState('5');
-  const [isGenerating, setIsGenerating] = useState(false);
+
   const [isMigrating, setIsMigrating] = useState(false);
 
   // Camera & Refs
@@ -278,9 +295,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
           
           try {
               // Prepare Student Context (Light version to save tokens)
-              const studentContext = students.map(s => `${s.name} (ID: ${s.id})`).join(', ');
+              const studentContext = students.map(s => `Name: ${s.name}, Grade: ${s.grade}, ID: ${s.id}, Score: ${s.score}`).join('\n');
               
-              const response = await sendMessageToGemini([], currentMsgText, true, studentContext);
+              // NEW: Prepare History with sender names
+              // Take last 10 messages
+              const recentHistory = teacherMessages.slice(-10);
+              const formattedHistory: Message[] = recentHistory.map(m => ({
+                  id: m.id,
+                  role: m.sender === 'TIMI (AI)' ? 'model' : 'user',
+                  // Inject sender name into text for context awareness
+                  text: `${m.sender}: ${m.text}`,
+                  timestamp: m.timestamp
+              }));
+
+              const response = await sendMessageToGemini(formattedHistory, currentMsgText, true, studentContext);
               
               const aiMsg: TeacherMessage = {
                   id: generateId(),
@@ -288,7 +316,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
                   text: response.text,
                   timestamp: Date.now(),
                   avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=Timi',
-                  relatedStudentId: response.relatedStudentId
+                  relatedStudentIds: response.relatedStudentIds || []
               };
               await sendTeacherMessage(aiMsg);
           } catch (e) {
@@ -356,11 +384,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
               sender: adminUsername || 'Admin',
               targetType: notifTarget,
               targetValue: notifTargetValue,
-              attachmentUrl: notifAttachment || undefined,
-              attachmentType: notifAttachment ? (notifAttachment.startsWith('data:image') ? 'image' : 'file') : undefined,
               timestamp: Date.now(),
               readBy: []
           };
+
+          if (notifAttachment) {
+              newNotif.attachmentUrl = notifAttachment;
+              newNotif.attachmentType = notifAttachment.startsWith('data:image') ? 'image' : 'file';
+          }
 
           await sendNotification(newNotif);
           alert("Notification Sent!");
@@ -371,6 +402,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
       } catch (e) {
           console.error(e);
           alert("Failed to send.");
+      } finally {
+          setNotifSending(false);
+      }
+  };
+
+  const handleSendQuickMessage = async () => {
+      if (!messageTargetStudent || !quickMessage.trim()) return;
+      
+      setNotifSending(true);
+      try {
+          const newNotif: Notification = {
+              id: generateId(),
+              title: `Հաղորդագրություն ${adminUsername}-ից`,
+              message: quickMessage.trim(),
+              sender: adminUsername || 'Admin',
+              targetType: 'USER',
+              targetValue: messageTargetStudent.id,
+              timestamp: Date.now(),
+              readBy: []
+          };
+
+          await sendNotification(newNotif);
+          alert("Հաղորդագրությունը ուղարկվեց:");
+          setQuickMessage('');
+          setIsMessageModalOpen(false);
+      } catch (e) {
+          alert("Չհաջողվեց ուղարկել:");
       } finally {
           setNotifSending(false);
       }
@@ -517,31 +575,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
       alert("Հարցը ավելացվեց!");
   };
 
-  const handleGenerateQuestions = async () => {
-      if (!newSubject.trim() || !aiTopic.trim()) {
-          alert("Խնդրում ենք լրացնել Առարկան և Թեման (Subject & Topic)");
-          return;
-      }
-      setIsGenerating(true);
-      try {
-          const genQuestions = await generateQuizQuestions(newSubject, aiTopic, aiGrade, 5);
-          for (const q of genQuestions) {
-              await saveQuestion(q);
-          }
-          if (genQuestions.length > 0) {
-              alert(`Հաջողությամբ գեներացվեց ${genQuestions.length} հարց:`);
-              setAiTopic('');
-              setIsAIGeneratorOpen(false);
-          } else {
-              alert("Հարցեր չգեներացվեցին։ Փորձեք կրկին։");
-          }
-      } catch (error) {
-          console.error(error);
-          alert("Սխալ տեղի ունեցավ գեներացման ժամանակ։");
-      } finally {
-          setIsGenerating(false);
-      }
-  };
+
   
   const handleDeleteQuestion = async (id: string, e?: React.MouseEvent) => {
       e?.preventDefault();
@@ -790,7 +824,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
               
               <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50/30">
                   {teacherMessages.map(msg => {
-                      const relatedStudent = msg.relatedStudentId ? students.find(s => s.id === msg.relatedStudentId) : null;
                       return (
                       <div key={msg.id} className={`flex gap-3 ${msg.sender === adminUsername ? 'flex-row-reverse' : 'flex-row'}`}>
                           <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-gray-200">
@@ -807,30 +840,38 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
                               </div>
                               <MarkdownRenderer content={msg.text} />
                               
-                              {relatedStudent && (
-                                  <div className="mt-3 bg-white p-3 rounded-lg border border-purple-200 shadow-sm flex items-center gap-3">
-                                      <div className="w-12 h-12 rounded-full bg-gray-200 overflow-hidden border">
-                                          <img src={relatedStudent.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${relatedStudent.name}`} className="w-full h-full object-cover" />
-                                      </div>
-                                      <div className="flex-1 min-w-0">
-                                          <h4 className="font-bold text-gray-800 truncate">{relatedStudent.name}</h4>
-                                          <p className="text-xs text-gray-500">Grade: {relatedStudent.grade}</p>
-                                          <div className="flex gap-2 mt-1">
-                                              <span className="text-[10px] bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded font-bold">⭐ {relatedStudent.score || 0}</span>
-                                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${relatedStudent.isBlocked ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                                                  {relatedStudent.isBlocked ? 'BLOCKED' : 'ACTIVE'}
-                                              </span>
-                                          </div>
-                                      </div>
-                                      <button 
-                                        onClick={() => {
-                                            setSearchTerm(relatedStudent.name);
-                                            setActiveTab('students');
-                                        }}
-                                        className="text-xs text-blue-600 hover:underline"
-                                      >
-                                          View Full
-                                      </button>
+                              {msg.relatedStudentIds && msg.relatedStudentIds.length > 0 && (
+                                  <div className="mt-3 space-y-2">
+                                      {msg.relatedStudentIds.map(sid => {
+                                          const relatedStudent = students.find(s => s.id === sid);
+                                          if (!relatedStudent) return null;
+                                          return (
+                                              <div key={sid} className="bg-white p-3 rounded-lg border border-purple-200 shadow-sm flex items-center gap-3">
+                                                  <div className="w-12 h-12 rounded-full bg-gray-200 overflow-hidden border">
+                                                      <img src={relatedStudent.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${relatedStudent.name}`} className="w-full h-full object-cover" />
+                                                  </div>
+                                                  <div className="flex-1 min-w-0">
+                                                      <h4 className="font-bold text-gray-800 truncate">{relatedStudent.name}</h4>
+                                                      <p className="text-xs text-gray-500">Grade: {relatedStudent.grade}</p>
+                                                      <div className="flex gap-2 mt-1">
+                                                          <span className="text-[10px] bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded font-bold">⭐ {relatedStudent.score || 0}</span>
+                                                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${relatedStudent.isBlocked ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                                                              {relatedStudent.isBlocked ? 'BLOCKED' : 'ACTIVE'}
+                                                          </span>
+                                                      </div>
+                                                  </div>
+                                                  <button 
+                                                    onClick={() => {
+                                                        setSearchTerm(relatedStudent.name);
+                                                        setActiveTab('students');
+                                                    }}
+                                                    className="text-xs text-blue-600 hover:underline"
+                                                  >
+                                                      View Full
+                                                  </button>
+                                              </div>
+                                          );
+                                      })}
                                   </div>
                               )}
                           </div>
@@ -861,6 +902,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
                         onChange={e => setNewTeacherMessage(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') handleSendTeacherMessage(); }}
                       />
+                      <Button 
+                        variant="secondary" 
+                        onClick={() => {
+                            if (!newTeacherMessage.trim()) {
+                                alert("Գրեք հարցը նախքան AI-ին դիմելը։");
+                                return;
+                            }
+                            // Force AI trigger by adding @ai if not present
+                            if (!newTeacherMessage.toLowerCase().includes('@ai')) {
+                                setNewTeacherMessage(prev => prev + ' @ai');
+                            }
+                            setTimeout(handleSendTeacherMessage, 0);
+                        }}
+                        className="bg-purple-100 text-purple-700 hover:bg-purple-200 border-purple-200"
+                      >
+                          ✨ Ask AI
+                      </Button>
                       <Button onClick={handleSendTeacherMessage}>➤</Button>
                   </div>
               </div>
@@ -983,7 +1041,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
                    </div>
                    <div className="flex gap-2 w-full md:w-auto">
                        <Button onClick={() => setIsQuestionModalOpen(true)} className="flex-1 md:flex-none shadow-md">+ Add Question</Button>
-                       <Button onClick={() => setIsAIGeneratorOpen(true)} variant="secondary" className="flex-1 md:flex-none shadow-md">✨ AI Generate</Button>
+
                    </div>
                </div>
 
@@ -1060,37 +1118,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
           </div>
       )}
 
-      {/* AI Generator Modal */}
-      {isAIGeneratorOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-              <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col animate-float">
-                  <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
-                      <h3 className="font-bold text-lg">AI Question Generator</h3>
-                      <button onClick={() => setIsAIGeneratorOpen(false)} className="text-gray-500 hover:text-gray-800">✕</button>
-                  </div>
-                  <div className="p-6 space-y-4">
-                      <div className="bg-indigo-50 p-3 rounded-lg text-sm text-indigo-800 mb-4">
-                          TIMI will generate 5 questions based on your topic.
-                      </div>
-                      <Input label="Subject" value={newSubject} onChange={e => setNewSubject(e.target.value)} placeholder="e.g. History" />
-                      <Input label="Topic Description" value={aiTopic} onChange={e => setAiTopic(e.target.value)} placeholder="e.g. World War II key events" />
-                      <div className="flex flex-col">
-                          <label className="text-sm font-medium text-gray-700 mb-1">Target Grade</label>
-                          <select 
-                             value={aiGrade} 
-                             onChange={e => setAiGrade(e.target.value)}
-                             className="px-3 py-2 border rounded-md"
-                          >
-                              {[1,2,3,4,5,6,7,8,9].map(g => <option key={g} value={g}>Grade {g}</option>)}
-                          </select>
-                      </div>
-                      <Button onClick={handleGenerateQuestions} isLoading={isGenerating} className="w-full mt-4 bg-gradient-to-r from-indigo-600 to-purple-600 border-0">
-                          ✨ Generate Questions
-                      </Button>
-                  </div>
-              </div>
-          </div>
-      )}
+
 
       {activeTab === 'profile' && (
           <div className="glass-panel rounded-xl shadow border p-6 md:p-8 max-w-2xl mx-auto animate-float">
@@ -1137,7 +1165,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
       )}
 
       {activeTab === 'notifications' && (
-          <div className="glass-panel rounded-xl shadow border p-6 md:p-8 max-w-2xl mx-auto">
+          <div className="glass-panel rounded-xl shadow border p-4 sm:p-6 md:p-8 w-full max-w-2xl mx-auto">
               <h2 className="text-xl md:text-2xl font-bold mb-6 flex items-center gap-2">📢 Send Notification</h2>
               <div className="space-y-6">
                   <Input 
@@ -1417,6 +1445,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                         <button 
                                             type="button" 
+                                            onClick={() => {
+                                                setMessageTargetStudent(s);
+                                                setIsMessageModalOpen(true);
+                                            }} 
+                                            className="text-emerald-600 hover:text-emerald-900 mr-4 bg-emerald-50 px-2 py-1 rounded"
+                                        >
+                                            💬 Message
+                                        </button>
+                                        <button 
+                                            type="button" 
                                             onClick={() => viewStudentHistory(s.name)} 
                                             className="text-blue-600 hover:text-blue-900 mr-4 bg-blue-50 px-2 py-1 rounded"
                                         >
@@ -1510,6 +1548,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
                               <Button type="submit" className="flex-1">Save Student</Button>
                           </div>
                       </form>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {isMessageModalOpen && messageTargetStudent && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col animate-float">
+                  <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
+                      <h3 className="font-bold text-lg">Հաղորդագրություն {messageTargetStudent.name}-ին</h3>
+                      <button onClick={() => setIsMessageModalOpen(false)} className="text-gray-500 hover:text-gray-800">✕</button>
+                  </div>
+                  <div className="p-6 space-y-4">
+                      <textarea 
+                        className="w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary h-32 resize-none"
+                        value={quickMessage}
+                        onChange={e => setQuickMessage(e.target.value)}
+                        placeholder="Գրեք ձեր հաղորդագրությունը..."
+                      />
+                      <div className="flex gap-3">
+                          <Button variant="ghost" onClick={() => setIsMessageModalOpen(false)} className="flex-1 border">Չեղարկել</Button>
+                          <Button onClick={handleSendQuickMessage} isLoading={notifSending} className="flex-1 bg-emerald-600">Ուղարկել</Button>
+                      </div>
                   </div>
               </div>
           </div>

@@ -2,6 +2,7 @@
   "name": "TIMI - Educational AI Platform",
   "description": "An educational AI tutor platform focused on guiding students through learning processes rather than providing direct answers. Includes student tracking and admin controls.",
   "requestFramePermissions": [
-    "camera"
+    "camera",
+    "microphone"
   ]
 }

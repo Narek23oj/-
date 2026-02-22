@@ -1,14 +1,18 @@
 
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   return {
-    plugins: [react()],
+    plugins: [
+      react(),
+      tailwindcss(),
+    ],
     define: {
       // API Keys for Client Side
-      'process.env.API_KEY': JSON.stringify("AIzaSyBH033mEB1Fe25TFahiLjRxpQtN_e2Oq9A"),
+      'process.env.API_KEY': JSON.stringify("AIzaSyByy52PD7Ww7ycESNhtzt4He3kHBDTlyDc"),
       
       // Firebase Configuration
       'process.env.FIREBASE_API_KEY': JSON.stringify("AIzaSyBkLx7A2QGeQFfklSFyYg7PPDLTCbAMhzw"),

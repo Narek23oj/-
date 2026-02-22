@@ -38,7 +38,7 @@ export interface TeacherMessage {
     text: string;
     timestamp: number;
     avatar?: string;
-    relatedStudentId?: string; // ID of a student to show an info card for
+    relatedStudentIds?: string[]; // IDs of students to show info cards for
 }
 
 export interface Notification {

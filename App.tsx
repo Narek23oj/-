@@ -7,6 +7,7 @@ import { AdminDashboard } from './components/AdminDashboard';
 import QuizSection from './components/QuizSection';
 import StudentProfileSetup from './components/StudentProfileSetup';
 import StoreSection from './components/StoreSection';
+
 import Button from './components/Button';
 import Avatar from './components/Avatar'; // Import Avatar
 import { getTeacherAvatar, subscribeToStudents, subscribeToNotifications, markNotificationAsRead, findStudentByNameAndGrade } from './services/storageService';
@@ -404,12 +405,12 @@ const App: React.FC = () => {
 
                           {/* NOTIFICATION DROPDOWN */}
                           {isNotifOpen && (
-                              <div className="absolute right-0 mt-2 w-72 sm:w-96 bg-white rounded-xl shadow-2xl border border-gray-200 z-50 overflow-hidden animate-float">
+                              <div className="fixed inset-x-2 top-[70px] sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-2 w-auto sm:w-96 bg-white rounded-xl shadow-2xl border border-gray-200 z-50 overflow-hidden animate-float">
                                   <div className="p-3 bg-gray-50 border-b flex justify-between items-center">
                                       <h4 className="font-bold text-gray-700">Notifications</h4>
                                       <button onClick={() => setIsNotifOpen(false)} className="text-gray-400 hover:text-gray-600">✕</button>
                                   </div>
-                                  <div className="max-h-[300px] sm:max-h-[400px] overflow-y-auto">
+                                  <div className="max-h-[70vh] sm:max-h-[400px] overflow-y-auto">
                                       {notifications.length === 0 ? (
                                           <p className="p-6 text-center text-gray-400 text-sm">No notifications yet.</p>
                                       ) : (
@@ -464,6 +465,7 @@ const App: React.FC = () => {
                       >
                           📝
                       </Button>
+
 
                       <Button 
                         variant={state.view === 'STUDENT_DASHBOARD' ? 'primary' : 'ghost'}

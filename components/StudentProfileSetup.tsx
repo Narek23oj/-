@@ -1,7 +1,7 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { StudentProfile, INITIAL_ADMINS } from '../types';
-import { saveStudent } from '../services/storageService';
+import { saveStudent, getTeacherList } from '../services/storageService';
 import { generateAIAvatar } from '../services/geminiService';
 import Input from './Input';
 import Button from './Button';
@@ -24,7 +24,17 @@ const PRESET_AVATARS = [
 const StudentProfileSetup: React.FC<StudentProfileSetupProps> = ({ student, onComplete }) => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [teacherList, setTeacherList] = useState<string[]>(INITIAL_ADMINS);
   const [teacherName, setTeacherName] = useState(student.teacherName || INITIAL_ADMINS[0]);
+  
+  useEffect(() => {
+    getTeacherList().then(list => {
+      setTeacherList(list);
+      if (!student.teacherName && list.length > 0) {
+        setTeacherName(list[0]);
+      }
+    });
+  }, [student.teacherName]);
   
   // Avatar State
   const [avatarMode, setAvatarMode] = useState<'PRESET' | 'UPLOAD' | 'AI'>('PRESET');
@@ -120,7 +130,7 @@ const StudentProfileSetup: React.FC<StudentProfileSetupProps> = ({ student, onCo
                     onChange={(e) => setTeacherName(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary"
                   >
-                      {INITIAL_ADMINS.map(admin => (
+                      {teacherList.map(admin => (
                           <option key={admin} value={admin}>{admin}</option>
                       ))}
                   </select>

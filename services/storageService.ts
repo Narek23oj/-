@@ -469,28 +469,55 @@ export const bulkImportStudents = async (csvContent: string): Promise<{ added: n
     snapshot.forEach(d => currentStudents.push(d.data() as StudentProfile));
 
     const firstLine = lines[0] || "";
-    const startIndex = (firstLine.toLowerCase().includes('name') || firstLine.toLowerCase().includes('անուն')) ? 1 : 0;
+    const headers = firstLine.toLowerCase().split(',').map(h => h.trim());
+    
+    // Detect column indices based on headers
+    let nameIdx = headers.indexOf('student');
+    if (nameIdx === -1) nameIdx = headers.indexOf('name');
+    if (nameIdx === -1) nameIdx = headers.indexOf('անուն');
+    
+    let gradeIdx = headers.indexOf('grade');
+    if (gradeIdx === -1) gradeIdx = headers.indexOf('դասարան');
+    
+    let teacherIdx = headers.indexOf('teacher');
+    if (teacherIdx === -1) teacherIdx = headers.indexOf('ուսուցիչ');
+    
+    let passIdx = headers.indexOf('password');
+    if (passIdx === -1) passIdx = headers.indexOf('գաղտնաբառ');
+
+    // If we found at least name or grade in the first line, it's a header row
+    const hasHeaders = nameIdx !== -1 || gradeIdx !== -1;
+    const startIndex = hasHeaders ? 1 : 0;
+
+    // Fallback defaults if no headers found (legacy format: name, grade, password)
+    if (!hasHeaders) {
+        nameIdx = 0;
+        gradeIdx = 1;
+        teacherIdx = -1; // No teacher in legacy
+        passIdx = 2;
+    }
 
     for (let i = startIndex; i < lines.length; i++) {
         const line = lines[i].trim();
         if (!line) continue;
         const parts = line.split(',');
-        if (parts.length < 2) {
-            errors.push(`Row ${i + 1}: Invalid format`);
+        
+        const name = parts[nameIdx]?.trim();
+        const grade = parts[gradeIdx]?.trim();
+        const teacher = (teacherIdx !== -1 && parts[teacherIdx]) ? parts[teacherIdx].trim() : undefined;
+        const password = (passIdx !== -1 && parts[passIdx]?.trim()) || "";
+
+        if (!name || !grade) {
+            if (line.length > 2) errors.push(`Row ${i + 1}: Missing name or grade`);
             continue;
         }
-        const name = parts[0].trim();
-        const grade = parts[1].trim();
-        const password = parts[2]?.trim() || Math.random().toString(36).slice(-6);
-
-        if (!name || !grade) continue;
 
         const existing = currentStudents.find(
             s => (s.name || "").toLowerCase() === name.toLowerCase() && s.grade === grade
         );
         
         if (existing) {
-            errors.push(`Row ${i + 1}: Student "${name}" already exists`);
+            errors.push(`Row ${i + 1}: Student "${name}" already exists in grade ${grade}`);
             continue;
         }
 
@@ -499,6 +526,7 @@ export const bulkImportStudents = async (csvContent: string): Promise<{ added: n
             name,
             grade,
             password,
+            teacherName: teacher,
             joinedAt: Date.now(),
             isBlocked: false,
             score: 0,

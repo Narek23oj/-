@@ -32,7 +32,6 @@ import Button from './Button';
 import Input from './Input';
 import MarkdownRenderer from './MarkdownRenderer';
 import Avatar from './Avatar'; 
-import { AdminTabs } from './AdminTabs';
 
 // Reuse Logo for Admin Dashboard (Purple text)
 const TIMILogoAdmin = () => (

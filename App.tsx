@@ -2,11 +2,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AppState, StudentProfile, MAIN_ADMIN, Notification } from './types';
 import Login from './components/Login';
-import ChatWindow from './components/ChatWindow';
 import { AdminDashboard } from './components/AdminDashboard';
 import QuizSection from './components/QuizSection';
 import StudentProfileSetup from './components/StudentProfileSetup';
 import StoreSection from './components/StoreSection';
+import Leaderboard from './components/Leaderboard';
 
 import Button from './components/Button';
 import Avatar from './components/Avatar'; // Import Avatar
@@ -39,6 +39,7 @@ const App: React.FC = () => {
   
   // Notification State
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [students, setStudents] = useState<StudentProfile[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
 
@@ -139,8 +140,9 @@ const App: React.FC = () => {
     // Only subscribe if a student is logged in
     if (state.currentUser && !state.isAdmin) {
         // 1. Student Data Sync
-        const unsubscribeStudents = subscribeToStudents((students) => {
-            const updatedMe = students.find(s => s.id === state.currentUser?.id);
+        const unsubscribeStudents = subscribeToStudents((allStudents) => {
+            setStudents(allStudents);
+            const updatedMe = allStudents.find(s => s.id === state.currentUser?.id);
             if (updatedMe) {
                 // SECURITY CHECK: If blocked while online, logout immediately
                 if (updatedMe.isBlocked) {
@@ -472,7 +474,7 @@ const App: React.FC = () => {
                         onClick={() => setState(prev => ({ ...prev, view: 'STUDENT_DASHBOARD' }))}
                         className={`text-xs md:text-sm flex-1 md:flex-none justify-center ${state.view !== 'STUDENT_DASHBOARD' ? 'text-primary hover:bg-indigo-50' : ''}`}
                       >
-                        💬
+                        🏆
                       </Button>
                       
                       <div className="h-6 w-px bg-gray-300 mx-1 md:mx-2"></div>
@@ -505,10 +507,7 @@ const App: React.FC = () => {
                     />
                  )}
                  {state.view === 'STUDENT_DASHBOARD' && (
-                    <ChatWindow 
-                        student={state.currentUser} 
-                        onSessionUpdate={handleSessionUpdate}
-                    />
+                    <Leaderboard students={students} title="🏆 Աշակերտների Ռեյտինգ" />
                  )}
                </>
             )}

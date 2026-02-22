@@ -26,12 +26,12 @@ import {
     subscribeToTeacherMessages,
     sendTeacherMessage
 } from '../services/storageService';
-import { sendMessageToGemini } from '../services/geminiService';
-import { ChatSession, StudentProfile, QuizQuestion, SUPER_ADMINS, MAIN_ADMIN, Notification, TeacherProfile, INITIAL_ADMINS, TeacherMessage, Message } from '../types';
+import { ChatSession, StudentProfile, QuizQuestion, SUPER_ADMINS, MAIN_ADMIN, Notification, TeacherProfile, INITIAL_ADMINS, Message } from '../types';
 import Button from './Button';
 import Input from './Input';
 import MarkdownRenderer from './MarkdownRenderer';
 import Avatar from './Avatar'; 
+import Leaderboard from './Leaderboard';
 
 // Reuse Logo for Admin Dashboard (Purple text)
 const TIMILogoAdmin = () => (
@@ -98,11 +98,9 @@ interface AdminDashboardProps {
 }
 
 const ADMIN_TABS = (
-  isSuperAdmin: boolean,
-  flaggedSessionsCount: number
+  isSuperAdmin: boolean
 ) => [
-  { id: 'sessions', label: `Chat (⚠️ ${flaggedSessionsCount})` },
-  { id: 'teachers_room', label: '☕ Ուսուցչանոց' },
+  { id: 'leaderboard', label: '🏆 Ռեյտինգ' },
   { id: 'students', label: 'Students' },
   { id: 'quizzes', label: 'Quiz' },
   { id: 'notifications', label: '🔔 Notifs' },
@@ -114,8 +112,8 @@ const ADMIN_TABS = (
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername }) => {
   const isSuperAdmin = adminUsername ? SUPER_ADMINS.includes(adminUsername) : false;
 
-  const [activeTab, setActiveTab] = useState<'sessions' | 'students' | 'quizzes' | 'profile' | 'notifications' | 'teachers' | 'teachers_room' | 'archive'>('sessions');
-  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [activeTab, setActiveTab] = useState<'students' | 'quizzes' | 'profile' | 'notifications' | 'teachers' | 'leaderboard' | 'archive'>('leaderboard');
+  // const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [students, setStudents] = useState<StudentProfile[]>([]);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [teachers, setTeachers] = useState<TeacherProfile[]>([]);
@@ -152,11 +150,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
   const [isAddingTeacher, setIsAddingTeacher] = useState(false);
   const [isTeacherModalOpen, setIsTeacherModalOpen] = useState(false);
 
-  // Teachers' Room (Chat) State
-  const [teacherMessages, setTeacherMessages] = useState<TeacherMessage[]>([]);
-  const [newTeacherMessage, setNewTeacherMessage] = useState('');
-  const [isAiTyping, setIsAiTyping] = useState(false); 
-  const teacherChatEndRef = useRef<HTMLDivElement>(null);
+  // Teachers' Room (Chat) State - DEPRECATED (AI Removed)
+  // const [teacherMessages, setTeacherMessages] = useState<TeacherMessage[]>([]);
+  // const [newTeacherMessage, setNewTeacherMessage] = useState('');
+  // const [isAiTyping, setIsAiTyping] = useState(false); 
+  // const teacherChatEndRef = useRef<HTMLDivElement>(null);
 
   // Quick Message State
   const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
@@ -198,9 +196,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
 
   useEffect(() => {
     const unsubStudents = subscribeToStudents(setStudents);
-    const unsubSessions = subscribeToSessions(setSessions);
+    // const unsubSessions = subscribeToSessions(setSessions);
     const unsubQuestions = subscribeToQuestions(setQuestions);
-    const unsubTeacherMessages = subscribeToTeacherMessages(setTeacherMessages);
+    // const unsubTeacherMessages = subscribeToTeacherMessages(setTeacherMessages);
     
     const unsubTeachers = subscribeToTeachers((dbTeachers) => {
         const combinedTeachers: TeacherProfile[] = [...dbTeachers];
@@ -229,10 +227,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
     return () => {
       stopCamera();
       unsubStudents();
-      if(unsubSessions) unsubSessions();
+      // if(unsubSessions) unsubSessions();
       unsubQuestions();
       unsubTeachers();
-      unsubTeacherMessages();
+      // unsubTeacherMessages();
     };
   }, [adminUsername]);
 
@@ -240,7 +238,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
       setSelectedStudentIds([]);
   }, [activeTab, searchTerm]);
 
-  // AUTO SCROLL TO BOTTOM OF CHAT
+  // AUTO SCROLL TO BOTTOM OF CHAT - DEPRECATED
+  /*
   useEffect(() => {
       if (activeTab === 'teachers_room') {
           setTimeout(() => {
@@ -248,6 +247,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
           }, 100);
       }
   }, [teacherMessages, activeTab, isAiTyping]); 
+  */
 
   // --- Filtering ---
   const filteredStudents = students.filter(s => 
@@ -259,9 +259,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
       (t.username || "").toLowerCase().includes(teacherSearchTerm.toLowerCase())
   );
 
-  const filteredSessions = sessions.filter(s => 
-      (s.studentName || "").toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // const filteredSessions = sessions.filter(s => 
+  //     (s.studentName || "").toLowerCase().includes(searchTerm.toLowerCase())
+  // );
   
   const uniqueSubjects = Array.from(new Set(questions.map(q => q.subject)));
   const filteredQuestions = questions.filter(q => {
@@ -270,69 +270,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
       return matchesSearch && matchesSubject;
   });
 
-  // --- Teacher Chat Logic ---
+  // --- Teacher Chat Logic - DEPRECATED (AI Removed) ---
+  /*
   const handleSendTeacherMessage = async () => {
       if (!newTeacherMessage.trim()) return;
-      
-      const currentMsgText = newTeacherMessage.trim();
-      const userMsg: TeacherMessage = {
-          id: generateId(),
-          sender: adminUsername || 'Unknown',
-          text: currentMsgText,
-          timestamp: Date.now(),
-          avatar: adminAvatar
-      };
-
-      setNewTeacherMessage('');
-      await sendTeacherMessage(userMsg);
-
-      // Trigger AI if message contains keywords
-      const lowerMsg = currentMsgText.toLowerCase();
-      // Broad matching for Armenian users
-      if (lowerMsg.includes('@ai') || lowerMsg.includes('timi') || lowerMsg.includes('թիմի') || lowerMsg.includes('տիմի')) {
-          setIsAiTyping(true); // START TYPING
-          
-          try {
-              // Prepare Student Context (Light version to save tokens)
-              const studentContext = students.map(s => `Name: ${s.name}, Grade: ${s.grade}, ID: ${s.id}, Score: ${s.score}`).join('\n');
-              
-              // NEW: Prepare History with sender names
-              // Take last 10 messages
-              const recentHistory = teacherMessages.slice(-10);
-              const formattedHistory: Message[] = recentHistory.map(m => ({
-                  id: m.id,
-                  role: m.sender === 'TIMI (AI)' ? 'model' : 'user',
-                  // Inject sender name into text for context awareness
-                  text: `${m.sender}: ${m.text}`,
-                  timestamp: m.timestamp
-              }));
-
-              const response = await sendMessageToGemini(formattedHistory, currentMsgText, true, studentContext);
-              
-              const aiMsg: TeacherMessage = {
-                  id: generateId(),
-                  sender: 'TIMI (AI)',
-                  text: response.text,
-                  timestamp: Date.now(),
-                  avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=Timi',
-                  relatedStudentIds: response.relatedStudentIds || []
-              };
-              await sendTeacherMessage(aiMsg);
-          } catch (e) {
-              console.error(e);
-              // Fallback error message in chat if something critical failed
-              const errorMsg: TeacherMessage = {
-                  id: generateId(),
-                  sender: 'TIMI (System)',
-                  text: '⚠️ Սխալ տեղի ունեցավ AI-ի հետ կապ հաստատելիս։',
-                  timestamp: Date.now()
-              };
-              await sendTeacherMessage(errorMsg);
-          } finally {
-              setIsAiTyping(false); // STOP TYPING ALWAYS
-          }
-      }
+      ...
   };
+  */
 
   // --- Notification Logic ---
   const handleNotifFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -796,8 +740,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
 
       <div className="flex mb-6 bg-white/60 p-1 rounded-lg w-full md:w-fit overflow-x-auto shadow-inner border border-white/50 backdrop-blur-sm">
          {[
-             {id: 'sessions', label: `Chat (⚠️ ${flaggedSessionsCount})`},
-             {id: 'teachers_room', label: '☕ Ուսուցչանոց'}, 
+             {id: 'leaderboard', label: '🏆 Ռեյտինգ'}, 
              {id: 'students', label: 'Students'},
              {id: 'quizzes', label: 'Quiz'},
              {id: 'notifications', label: '🔔 Notifs'},
@@ -814,113 +757,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
          ))}
       </div>
       
-      {activeTab === 'teachers_room' && (
-          <div className="glass-panel rounded-xl shadow border h-[600px] flex flex-col overflow-hidden">
-              <div className="p-4 border-b bg-gray-50 flex items-center justify-between">
-                  <h3 className="font-bold text-gray-800">Ընդհանուր Զրուցարան</h3>
-                  <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded">Նշիր @ai հարց տալու համար</span>
-              </div>
-              
-              <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50/30">
-                  {teacherMessages.map(msg => {
-                      return (
-                      <div key={msg.id} className={`flex gap-3 ${msg.sender === adminUsername ? 'flex-row-reverse' : 'flex-row'}`}>
-                          <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-gray-200">
-                              {msg.avatar ? (
-                                  <img src={msg.avatar} alt={msg.sender} className="w-full h-full object-cover" />
-                              ) : (
-                                  <div className="w-full h-full bg-gray-200 flex items-center justify-center text-xs font-bold">{msg.sender[0]}</div>
-                              )}
-                          </div>
-                          <div className={`max-w-[80%] rounded-xl p-3 text-sm shadow-sm ${msg.sender === 'TIMI (AI)' ? 'bg-purple-100 border-purple-200 text-purple-900' : (msg.sender === adminUsername ? 'bg-white border text-gray-800' : 'bg-indigo-50 text-gray-800')}`}>
-                              <div className="flex justify-between items-center mb-1 gap-2">
-                                  <span className="font-bold text-xs opacity-70">{msg.sender}</span>
-                                  <span className="text-[10px] text-gray-400">{new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                              </div>
-                              <MarkdownRenderer content={msg.text} />
-                              
-                              {msg.relatedStudentIds && msg.relatedStudentIds.length > 0 && (
-                                  <div className="mt-3 space-y-2">
-                                      {msg.relatedStudentIds.map(sid => {
-                                          const relatedStudent = students.find(s => s.id === sid);
-                                          if (!relatedStudent) return null;
-                                          return (
-                                              <div key={sid} className="bg-white p-3 rounded-lg border border-purple-200 shadow-sm flex items-center gap-3">
-                                                  <div className="w-12 h-12 rounded-full bg-gray-200 overflow-hidden border">
-                                                      <img src={relatedStudent.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${relatedStudent.name}`} className="w-full h-full object-cover" />
-                                                  </div>
-                                                  <div className="flex-1 min-w-0">
-                                                      <h4 className="font-bold text-gray-800 truncate">{relatedStudent.name}</h4>
-                                                      <p className="text-xs text-gray-500">Grade: {relatedStudent.grade}</p>
-                                                      <div className="flex gap-2 mt-1">
-                                                          <span className="text-[10px] bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded font-bold">⭐ {relatedStudent.score || 0}</span>
-                                                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${relatedStudent.isBlocked ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                                                              {relatedStudent.isBlocked ? 'BLOCKED' : 'ACTIVE'}
-                                                          </span>
-                                                      </div>
-                                                  </div>
-                                                  <button 
-                                                    onClick={() => {
-                                                        setSearchTerm(relatedStudent.name);
-                                                        setActiveTab('students');
-                                                    }}
-                                                    className="text-xs text-blue-600 hover:underline"
-                                                  >
-                                                      View Full
-                                                  </button>
-                                              </div>
-                                          );
-                                      })}
-                                  </div>
-                              )}
-                          </div>
-                      </div>
-                  )})}
-                  
-                  {isAiTyping && (
-                      <div className="flex gap-3 flex-row">
-                          <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-gray-200">
-                              <img src="https://api.dicebear.com/7.x/bottts/svg?seed=Timi" alt="AI" className="w-full h-full object-cover" />
-                          </div>
-                          <div className="bg-purple-50 border border-purple-100 rounded-xl p-3 shadow-sm flex items-center gap-1">
-                              <div className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce"></div>
-                              <div className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce delay-100"></div>
-                              <div className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce delay-200"></div>
-                          </div>
-                      </div>
-                  )}
-                  <div ref={teacherChatEndRef} />
-              </div>
-
-              <div className="p-3 bg-white border-t">
-                  <div className="flex gap-2">
-                      <input 
-                        className="flex-1 border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                        placeholder="Գրեք հաղորդագրություն (կամ @ai...)"
-                        value={newTeacherMessage}
-                        onChange={e => setNewTeacherMessage(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') handleSendTeacherMessage(); }}
-                      />
-                      <Button 
-                        variant="secondary" 
-                        onClick={() => {
-                            if (!newTeacherMessage.trim()) {
-                                alert("Գրեք հարցը նախքան AI-ին դիմելը։");
-                                return;
-                            }
-                            // Force AI trigger by adding @ai if not present
-                            if (!newTeacherMessage.toLowerCase().includes('@ai')) {
-                                setNewTeacherMessage(prev => prev + ' @ai');
-                            }
-                            setTimeout(handleSendTeacherMessage, 0);
-                        }}
-                        className="bg-purple-100 text-purple-700 hover:bg-purple-200 border-purple-200"
-                      >
-                          ✨ Ask AI
-                      </Button>
-                      <Button onClick={handleSendTeacherMessage}>➤</Button>
-                  </div>
-              </div>
+      {activeTab === 'leaderboard' && (
+          <div className="h-[600px]">
+              <Leaderboard students={students} />
           </div>
       )}
       {/* ... Other Tabs remain same ... */}
@@ -954,8 +793,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 bg-white/40">
-                            {filteredTeachers.map(t => (
-                                <tr key={t.username} className="hover:bg-indigo-50/50 transition duration-150">
+                            {filteredTeachers.map((t, tIdx) => (
+                                <tr key={t.username || tIdx} className="hover:bg-indigo-50/50 transition duration-150">
                                     <td className="px-6 py-4 font-bold text-gray-900 flex items-center gap-3 whitespace-nowrap">
                                         <div className="w-8 h-8 rounded-full bg-indigo-100 overflow-hidden border border-indigo-200 shadow-sm">
                                             {t.avatar ? (
@@ -1255,84 +1094,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ adminUsername })
           </div>
       )}
 
-      {activeTab === 'sessions' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-[700px]">
-           <div className="md:col-span-1 glass-panel rounded-xl shadow border overflow-hidden flex flex-col">
-              <div className="p-4 border-b bg-gray-50/50">
-                  <Input placeholder="Search..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-              </div>
-              <div className="flex-1 overflow-y-auto">
-                 {filteredSessions.length === 0 && <p className="text-gray-400 p-4 text-center">No sessions found</p>}
-                 {filteredSessions.map(session => (
-                     <div 
-                        key={session.id} 
-                        onClick={() => setSelectedSession(session)}
-                        className={`p-4 border-b cursor-pointer hover:bg-gray-50 transition ${selectedSession?.id === session.id ? 'bg-indigo-50 border-l-4 border-l-indigo-500' : ''}`}
-                     >
-                         <div className="flex justify-between items-start mb-1">
-                            <span className="font-bold text-gray-800">{session.studentName}</span>
-                            {session.isFlagged && <span className="text-[10px] bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-bold">FLAGGED</span>}
-                         </div>
-                         <div className="text-xs text-gray-500 flex justify-between">
-                            <span>{new Date(session.startTime).toLocaleString()}</span>
-                            <span>{session.messages.length} msgs</span>
-                         </div>
-                     </div>
-                 ))}
-              </div>
-           </div>
-
-           <div className="md:col-span-2 glass-panel rounded-xl shadow border flex flex-col overflow-hidden">
-               {selectedSession ? (
-                   <>
-                   <div className="p-4 border-b bg-gray-50/80 flex justify-between items-center">
-                       <div>
-                           <h3 className="font-bold">{selectedSession.studentName}</h3>
-                           <p className="text-xs text-gray-500">{new Date(selectedSession.startTime).toLocaleString()}</p>
-                       </div>
-                       <Button variant="danger" onClick={(e) => handleDeleteSession(selectedSession.id, e)} className="text-sm px-3 py-1">Delete Log</Button>
-                   </div>
-                   <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50/30">
-                       {selectedSession.messages.map(msg => {
-                           const currentStudent = students.find(s => s.id === selectedSession.studentId);
-                           
-                           return (
-                           <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} items-end gap-2`}>
-                               {msg.role === 'model' && (
-                                   <div className="w-8 h-8 rounded-full bg-gray-200 overflow-hidden shrink-0 border border-gray-300 shadow-sm mb-1">
-                                        <img src="https://api.dicebear.com/7.x/bottts/svg?seed=Timi" alt="TIMI" className="w-full h-full object-cover" />
-                                   </div>
-                               )}
-                               
-                               <div className={`max-w-[80%] p-3 rounded-lg text-sm ${msg.role === 'user' ? 'bg-indigo-100 text-indigo-900 shadow-sm' : 'bg-white border text-gray-800 shadow-sm'}`}>
-                                   <p className="font-bold text-xs mb-1 opacity-50">{msg.role === 'user' ? selectedSession.studentName : 'TIMI AI'}</p>
-                                   <div className="whitespace-pre-wrap"><MarkdownRenderer content={msg.text} /></div>
-                                   {msg.image && (
-                                       <div className="mt-2 rounded-lg overflow-hidden border border-gray-200">
-                                           <img src={msg.image} alt="Generated" className="w-full h-auto" />
-                                       </div>
-                                   )}
-                               </div>
-
-                               {msg.role === 'user' && (
-                                   <Avatar 
-                                        src={currentStudent?.avatar} 
-                                        name={selectedSession.studentName} 
-                                        frameId={currentStudent?.equippedFrame} 
-                                        size="sm" 
-                                        className="mb-1"
-                                    />
-                               )}
-                           </div>
-                       )})}
-                   </div>
-                   </>
-               ) : (
-                   <div className="flex-1 flex items-center justify-center text-gray-400">Select a session to view details</div>
-               )}
-           </div>
-        </div>
-      )}
+      {/* Sessions Tab Removed */}
 
       {activeTab === 'students' && (
         <div className="mb-6 space-y-4 relative">
